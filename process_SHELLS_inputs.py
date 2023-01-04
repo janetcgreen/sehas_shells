@@ -14,8 +14,10 @@ from io import BytesIO
 import boto3
 import mysql.connector
 import sqlite3 as sl
+from hapiclient import hapi
 import matplotlib.pyplot as plt
-import time
+from hapiclient.hapitime import hapitime2datetime
+import pandas as pd
 
 #from spacepy import coordinates as coord
 #from spacepy.irbempy import get_Lstar
@@ -23,7 +25,6 @@ import time
 
 #sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
-import data_utils as du
 import shells_web_utils as swu
 
 
@@ -94,28 +95,30 @@ def checkKey(testdict, keys):
 
 def setupLogging(logfile):
     '''
-    PURPOSE: To set up a logger for tracking issues
+    PURPOSE: To set up the root logger for tracking issues
+    all other modules will add to this logger when setup this way
     :param logfile:
     :return:
     '''
 
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO) # log at the lowest level
+    try:
+        # Create the output format
+        format = '%(asctime)s:%(levelname)s:%(lineno)s:  %(message)s'
+        # Set up the root logger to write to file
+        logging.basicConfig(filename=logfile, format=format, level=logging.INFO)
+        # Then add the console too
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        # set a format which is simpler for console use
+        formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+        # tell the handler to use this format
+        console.setFormatter(formatter)
+        # add the handler to the root logger
+        logging.getLogger('').addHandler(console)
+    except Exception as err:
+        raise(err)
 
-    # Create the output format
-    formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(lineno)s:  %(message)s')
-
-    # JGREEN: To make this work with the async system
-    # you can't have the filehandler
-    file_handler = logging.FileHandler( logfile )
-    file_handler.setFormatter(formatter)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
-    logger.addHandler(stream_handler)
-
-    return logger
+    return
 
 def find_s3_last_time(cdata,fn_pattern):
     '''
@@ -229,21 +232,20 @@ def get_last_time(fname):
     return ltime
 
 
-def connectToDb(cdict, logger):
+def connectToDb(cdict):
     '''
     PURPOSE: To connect to a mysql or sqlite dbase
     :param cdict: dictionary with needed infor for connecting to dbase
-    :param logger: for tracking errors
     :return conn: the dbase connection object
 
-    # For testing we use an sqlite database. The connection process for
-    # that is different because you don't need a user, pass or host
-    # So I added a second try except
+    # For testing we use an sqlite database that has
+    # a different connection process because you don't need a user, pass or host
+    # So I added a second try except for testing
     '''
     conn = None
 
     try:
-
+        # If its a normal sql dbase you need all these
         dbuser = cdict['dbuser']
         dbpass = cdict['dbpass']
         dbhost = cdict['dbhost']
@@ -254,64 +256,216 @@ def connectToDb(cdict, logger):
                                        password=dbpass,
                                        host=dbhost,
                                        database=dbase)
-
     except Exception as e:
         # try connectin as sqlite
         try:
             conn = sl.connect(cdict['dbase'])
-        except Exception as e:
-            logger.exception(e)
-        if conn is not None:
-            conn.close()
+        except Exception as err:
+            logging.exception(err)
+            if conn is not None:
+                conn.close()
 
     return conn
 
-
-
-
-def get_start_rt(cdict,sat,logger):
+def get_start_rt(cdict,sat):
     '''
-    PURPOSE: to get the start data for real time processing by checking the last data
+    PURPOSE: to get the start date for real time processing by checking the last data
     # in the dbase
-    :param cdict: dictionary with info for connection to dbase
-    :param sat: the satellite data to lok or
-    :param logger:
-    :return:
+    :param cdict (dict): dictionary with info for connection to dbase
+    :param sat (str): the satellite data to lok or
+    :return sdate (datetime):
 
-    A satellite integer id is used for storing data
-    That id could be table in the database with the names
-    of the satellites (i.e. 'n15') or use the simple function since
-    there are only 8 so for now its just a function.
     '''
+    # Create a satellite infor instance
+    satinfo = swu.poes_sat_sem2(sat)
+    satId = satinfo.satid()
 
     # ----------- Connect to dbase --------------
     # This will connect to sql or sqlite
-    conn = connectToDb(cdict, logger)
-    cursor = conn.cursor()
+    try:
+        conn = connectToDb(cdict)
+        cursor = conn.cursor()
 
-    # Get the sat Id from dbase
-    # query = "SELECT id from "+cdict['sattbl'] +" WHERE satName = %s"
-    # cursor.execute(query,(sat,))
-    # satId = cursor.fetchone()[0]
+        if satId is not None:
+            # This is annoying because sqlite and mysql use different parameter specification
+            query = "SELECT max(unixTime_utc) from "+ cdict['inputstbl'] + " WHERE satId="+str(satId)
+            #cursor.execute(query,(satId,))
+            cursor.execute(query)
+            stime = cursor.fetchone()[0]
 
-    # Get sat Id from fixed function that numbers
-    # the sats 1-8
-    satId = swu.satname_to_id(sat)
-
-    if satId is not None:
-        query = "SELECT max(unixTime_utc) from "+ cdict['inputstbl'] + " WHERE satId=%s"
-        cursor.execute(query,(satId,))
-        stime = cursor.fetchone()[0]
-        if stime is None:
-            sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
+            if stime is None:
+                sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
+            else:
+                #Todo check that this is giving the right time
+                sdate = dt.datetime.utcfromtimestamp(stime)
         else:
-            #Todo check that this is giving the right time
-            sdate = dt.datetime.utcfromtimestamp(stime)
-    else:
-        # Todo This should probably exit and throw an error
-        sdate = dt.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            sdate = None
+            logging.error('No satId for sat='+sat)
+            raise Exception("No satId")
+
+    except Exception as err:
+        sdate = None
+        logging.error('Problems connecting to dbase'+str(err))
 
     return sdate
+
+def get_start_rt_hapi(cdict,sat):
+    '''
+    PURPOSE: to get the last processed data from the CCMC iswa HAPI server
+    If the current day is outside of the satellite mission then sdate is None
+    or if it can't get data for some reason then sdate is None
+    :param cdict (dict):
+        A config file dict with info for accessing the processed shells
+        input data at ISWA that includes the server name and shells_data table name
+    :param sat (string):
+        name of poes/metop sat to get data for, i.e. 'n15'
+    :param logger:
+    :return sdate (datetime): T
+        The time of the last processed POES data
+    '''
+    # The CCMC ISWA database uses a HAPI server
+    # These are the required inputs
+    server     = cdict['server']
+    dataset    = cdict['dataset']
+    parameters = sat
+
+    # For real time we need the last time processed for the satellite of interest.
+    # First check if the satellite was even operating on this day
+    # We want to avoid repeatedly checking for data from a satellite that is not operational
+
+    satinfo = swu.poes_sat_sem2(sat) # Create a poes sat class instance
+    satstart = satinfo.sdate() # Get the date the sat became operational
+
+    # If the sat is still running edate is None
+    satend = satinfo.edate()
+    if satend is None:
+        satend = dt.datetime.utcnow()+dt.timedelta(days = 1)
+
+    thisday = dt.datetime.utcnow().replace(hour=0,minute = 0, second = 0, microsecond=0)
+
+    # If the sat is operational for the date requested then proceed
+    # Otherwise return None if outside of operational dates
+    if ((thisday>=satstart) & ( satend>thisday)):
+        # We need the last data processed in real time in the CCMC dbase
+        # so check if there is any in the last two days
+        start = (thisday-dt.timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%S')
+        stop  = thisday.strftime('%Y-%m-%dT%H:%M:%S')
+        # The ISWA dbase will have time, 39 eflux values and sat
+        # We just need time and sat to get the last processed data
+        parameters = 'Time,sat'
+        opts       = {'usecache': True,'method':'numpy'}
+        try:
+            # If no data this call returns []
+            data, meta = hapi(server, dataset, parameters, start, stop, **opts)
+            # If we expect the satellite should have data but no real time data exists yet
+            # Then start with the current day
+            # If the real time processing is down for more than 7 days it will
+            # have to be filled in
+            if len(data['Time'])<1:
+                sdate = thisday
+            else:
+                # This has tzinfo
+                inds = np.where(data[sat]==sat)
+                if len(inds)>0:
+                    sdate = hapitime2datetime(data['Time'])[-1]
+                else:
+                    sdate = thisday
+        except Exception as err:
+            # If there is no table etc the hapi call will raise an error so
+            # we set that to None and log the issue
+            sdate = None
+            logging.error('Problems connecting to hapi:'+str(err))
+
+    else:
+        sdate = None
+
+    return sdate
+
+def get_start_rt_text(cdict,sat,outdir):
+    '''
+    PRUPOSE: to get the date to start processing data in real time mode by
+    checking an already processed archive of data with daily json or csv files
+    The start date will be sat dependent because data are downlinked at different
+    times
+    :param cdict (dict): dictionary with information like the output_type
+    :param sat (str): Should be like 'n15'
+    :param outdir (str): directory to look for data, Default is current dir
+    :return: sdate
+    '''
+    # For real time we need the last time processed for the satellite of interest.
+    # First check if the satellite was even operating on this day
+    # We want to avoid repeatedly checking for data from a satellite that is not operational
+
+    dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
+    satinfo = swu.poes_sat_sem2(sat) # Create a poes sat class instance
+    satstart = satinfo.sdate() # Get the date the sat became operational
+
+    # If the sat is still running edate is None
+    satend = satinfo.edate()
+    if satend is None:
+        satend = dt.datetime.utcnow()+dt.timedelta(days = 1)
+
+    thisday = dt.datetime.utcnow().replace(hour=0,minute = 0, second = 0, microsecond=0)
+
+    # If the sat is operational for the date requested then proceed
+    # Otherwise return None if outside of operational dates
+    if ((thisday>=satstart) & ( satend>thisday)):
+        # We need the last data processed in real time from the archive of
+        # daily json or csv files in outdir so make a list of files
+        # Files will be called fname+'_YYYYMMDDTHHMMSS.' input_type (either json or csv)
+        # Check if there is a daily file started already
+        fout = os.path.join(outdir,'**',cdict['fname']+'*.'+cdict['input_type'])
+        flist = glob.glob(fout)
+        if len(flist)<1:
+            sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
+        else:
+            # Open the last file and look for any data for that sat
+            flist.sort(reverse=True)
+            ltime = None
+            fco = 0
+            if len(flist)>2:
+                fend = 2
+            else:
+                fend = len(flist)
+            while ((fco<fend) & (ltime is None)):
+                lastdata = pd.read_csv(flist[fco]).to_dict(orient='list')
+                satIDs = np.array(lastdata['satID'])
+                inds = np.where(satIDs==satinfo.satid())[0]
+                if len(inds)>0:
+                    ltime = dt.datetime.strptime(lastdata[inds[-1]],dformat)
+                fco = fco +1
+            if ltime is None:
+                sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
+            else:
+                sdate = ltime
+
+    else:
+        sdate = None
+    return sdate
+
+def get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset):
+    '''
+    PURPOSE: To get the Kp data from the ISWA HAPI server
+    :param Kp_sdate (datetime):
+    :param Kp_edate (datetime):
+    :param iswaserver (str):
+    :param kpdataset (str):
+    :return data,meta:
+    '''
+    start = Kp_sdate.strftime('%Y-%m-%dT%H:%M:%S')
+    stop = Kp_edate.strftime('%Y-%m-%dT%H:%M:%S')
+    # The ISWA dbase will have time, 39 eflux values and sat
+    # We just need time and sat to get the last processed data
+    parameters = 'Time,KP_3H'
+    opts = {'usecache': True, 'method': 'numpy'}
+    try:
+        data, meta = hapi(iswaserver, kpdataset, parameters, start, stop, **opts)
+    except:
+        data= None
+        meta = None
+        logging.error('Cant get to iswa Kp data')
+
+    return data,meta
 
 def find_model_files(modeldir, model):
     '''
@@ -408,39 +562,62 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                 vars=['time','alt','lat','lon','L_IGRF','MLT',
                       'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3','mep_ele_tel90_flux_e4'],
                 channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
-                            'mep_ele_tel90_flux_e4'], model=None, modeldir=None, logfile = None, configfile=None):
+                            'mep_ele_tel90_flux_e4'], model=None, modeldir=None, logfile = None,
+                   configfile=None, csection='DEFAULT'):
     '''
     ---------------------------------------------------------------------------------------------
     PURPOSE: To collect POES/MetOP data from NCEI/NGDC, and process it for the shells model
 
-    :param: sdate_all (datetime) - date to start creating shells data if reprocessing and not rt mode
-    :param: edate (datetime) - date to stop creating shells data if reprocessing and not rt mode
-    :param: realtime (int) - 0 for not realtime and 1 for real time
+    :param: sdate_all (datetime) -
+            date to start creating shells data if reprocessing and not rt mode
+            REQUIRED when realtime is 0
+    :param: edate (datetime) -
+            date to stop creating shells data if reprocessing and not rt mode
+            REQUIRED when realtime is 0
+    :param: realtime (int) -
+            0 for not realtime and 1 for real time
             Default-  0 False
-    :param: localdir (str) - Local directory of POES data. If this is passed it will look for data
-                         locally instead of going to the noaa website (This is not well tested)
-    :param: outdir (str) - Output directory for daily netcdf files of processed  data. If a config
-                            file is passed then output data goes into dbase or S3
-    :param: cdfdir (str) - Directory of the cumulative dist. function. files needed for mapping
-                            poes data to a consistent location
-    :param: noaasite (str) - noaa website to get data from if the data is not local 'satdat.ngdc.noaa.gov'
-    :param: sats list(str) - satellites to get data from
+    :param neural (int) -
+            0 to not process to the neural network electron flux data
+            1 to do the neural network processing
+            Default 0
+    :param: localdir (str) -
+            Local directory of POES data to process. If this is passed it will look for data
+            locally instead of going to the noaa website (This is not well tested)
+    :param: outdir (str) -
+            Output directory for daily files of processed  data.
+            If none is passed then it is assumed to be the working directory
+    :param: cdfdir (str) -
+            Directory of the cumulative dist. function files needed for mapping
+            poes data to a consistent location
+    :param: noaasite (str) -
+            noaa website to get data from if the data is not local 'satdat.ngdc.noaa.gov'
+    :param: sats list(str) -
+            satellites to get data from
             default from command line= ['n15','n18','n19','m01','m02','m03']
-    :param: vars list(str) - all variables to get from the poes data files needed for processing
+    :param: vars list(str) -
+            all variables to get from the poes data files needed for processing
             default = ['time','alt','lat','lon','L_IGRF','MLT','mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2',
              'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
-    :param: channels list(str) - particle flux data variables to use from poes data files
-            default from commnad line ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
-                               'mep_ele_tel90_flux_e4']
-    :param: model (datetime or str) - The instance of the neural network to use in processing. If the input is a str,
-             it must be in the YYYYMMDD format. Datetime strings will be reformatted to conform to this naming convention
-             Default from command line is None. If this is the case, the most recent instance  of the neural network will
+    :param: channels list(str) -
+            particle flux data variables to use from poes processed l1b data files
+            default from commnad line ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2',
+            'mep_ele_tel90_flux_e3','mep_ele_tel90_flux_e4']
+    :param: model (datetime or str) -
+            The neural network model to use in processing. If the input is a str,
+            it must be in the YYYYMMDD format. Datetime strings will be reformatted to conform to this naming convention
+            Default from command line is None. If this is the case, the most recent instance  of the neural network will
              be used.
-    :param: modeldir (str) - The path (relative or absolute) to the keras model files identified in the model parameter.
+    :param: modeldir (str) -
+            The path (relative or absolute) to the keras model files identified in the model parameter.
              Default from command line is None, which will invoke a search in the current working directory. (i.e. ./.)
-    :param  logfile (str) - location and base name of logfile. The year month and .log will be appended to the basename
-    :param: configfile (str) - filename with configuration setting. This is used in conjuction with AWS
-             so that data can be passed to the S3 bucket that has the SHA web pages or with a mysql database
+    :param  logfile (str) -
+            location and base name of logfile. The year month and .log will be appended to the basename
+    :param: configfile (str) -
+            filename with configuration settings. This is used in conjuction with AWS S3
+            so that data can be passed to the S3 bucket that has the SHA web pages or with a mysql database
+            or with CCMC
+    :param csection(str)
 
     USAGE:
 
@@ -448,12 +625,11 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
     ----------------
         (REAL TIME example)
         python process_SHELLS.py -rt -ns satdat.ngdc.noaa.gov -sa n15 n18 n19 m01 m02
-            -cdf /efs/spamstaging/SHELLS/cdfdata -log /efs/spamstaging/logs/process_SHELLS_rt -c ./configAWS.ini
+            -log /efs/spamstaging/logs/process_SHELLS_rt -c ./configAWS.ini
 
         (REPROCESSING getting data from noaa example)
         (This automatically creates a logfile in the current directory)
         python process_SHELLS.py -s 2015-01-01 -e 2015-01-02 -ns satdat.ngdc.noaa.gov -sa n15 n18
-            -cdf /Users/janet/PycharmProjects/SHELLS/cdfdata
 
         (REPROCESSING getting data locally)
         python process_SHELLS.py -s 2001-01-01 -e 2002-01-01 -ld /Users/janet/PycharmProjects/data/sem/poes/data/raw/ngdc/
@@ -476,20 +652,23 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
         #-------------------- Logging Setup ----------------------------------------------
         # Create a logile if requested.
         # When called from command line theres always a logfile because a default is given
-        # './process_shells_inputs' The year and month are appended here.
+        # './SHELLS/process_shells_inputs' The year and month are appended here.
 
         if logfile is not None:
             YMO = dt.datetime.utcnow().strftime("%Y_%m_%d")
-            logfile = logfile + '_' + YMO
+            logfile = logfile + '_' + YMO+'.log'
             logger = setupLogging(logfile)
 
+        logging.info('Running process_shells')
+
         #---------------- Set up mapping info -------------------
-        # cdf_dir: dir where the cummulative distribution function data is located
-        # that are needed for mapping
+        # cdf_dir: dir where the cumulative distribution function data is located
+        # needed for mapping POES data
         # These cdf files are lookup tables to go from flux to percentile and vice versa
         # Todo make a default here because its required and add a check for the files
         cdf_dir = cdfdir
-        # These should not be changed because it is what the neural network was
+
+        # These values should not be changed because they are what the neural network was
         # trained with
         sat_ref = 'm02'  # The reference sat to map to. Will always be m02 for now
         reflon = 20  # The reference lon to map to
@@ -497,33 +676,36 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
 
         # ------------- Input Checks -------------------------------
         # Make sure sats is a list ['n18','n19'] or ['n19] and not one str 'n19'
-        # Thats a common error
+        # Thats a common issue
         if type(sats) != list:
             sats = [sats]
 
         # ----------------- Set up nn if needed --------------------
-        # load in transforms,model for Neural Network that are always a trio of files:
-        # in_scale, out_scale binary files and a model_quantile HDF5 file.
+        # load in transforms,model for Neural Network if requested
+        # They  are always a trio of files: in_scale, out_scale binary files
+        # and a model_quantile HDF5 file.
         #
         if neural is True:
             out_scale_file, in_scale_file, hdf5File = find_model_files(modeldir,model)
             # Check Models before loading
-            #
             if (len(out_scale_file) == 0) | (len(in_scale_file) == 0) | len(hdf5File) == 0:
                 msg = 'The NN model files were not found.'
-                print(msg)
+                logging.error(msg)
                 raise Exception(msg)
-        
-            out_scale = load(out_scale_file[0])
-            in_scale = load(in_scale_file[0])
-            m = keras.models.load_model(hdf5File[0], custom_objects={'loss': qloss}, compile=False)
+            else:
+                out_scale = load(out_scale_file[0])
+                in_scale = load(in_scale_file[0])
+                m = keras.models.load_model(hdf5File[0], custom_objects={'loss': qloss}, compile=False)
 
         # -----------------------Read config file if passed --------------
         # If a config file is passed the shells data will be accessed and stored
-        # either at AWS S3 bucket or mysql type dbase (CCMC)
+        # based on what is in the logfile. This could be
+        # AWS S3 bucket, or mysql type dbase, hapi server, csv, or json
+        # Otherwise it can be run from a local cache of netcdf files
 
         if configfile is not None:
-            cdict, dbase_type = swu.read_config(configfile)
+            # csection is the header in the configfile to get info from
+            cdict, dbase_type = swu.read_config(configfile,csection)
         else:
             cdict = None
 
@@ -538,7 +720,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
             # print messsage and return. It can't run without those
             if ( (sdate_all is None) | (edate is None) ):
                 msg = 'Must give start and end time if not real time mode'
-                print(msg)
+                logging.error(msg)
                 raise Exception(msg)
 
         # --------------- Step through through each sat that is passed -----------------------
@@ -551,24 +733,29 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
 
             if realtime:
                 # sdate should be the last processed data time for sat
-                # If no processed data exists yet then start with current day
-                # Data can be stored as files (local or S3 bucket) or in sql dbase
+                # If no processed data exists yet then it will start with current day
+                # Data can be stored as files (local or S3 bucket) or in sql/HAPI dbase
 
                 # If no output file directory passed then assume it is the current one
-                # Todo Do I need this?
+                # if it is needed
                 if outdir is None:
                     outdir =os.getcwd()
 
                 if configfile is not None:
-                    # If there's a configfile the data is in S3 bucket or sql dbase
-                    # Which one is set by the header in the config file
+                    # If a configfile is passed then use the input_type
+                    # there to get the start date for processing
                     if dbase_type=='S3':
                         # Get start date from files at S3 bucket
                         sdate = find_s3_last_time(cdict, 'shells_*.nc')
-                    else:
-                        # Or get start date from dbase
+                    elif cdict['input_type']=='Dbase':
+                        # Or get start date from an sql dbase
                         # Todo make this also work with sqlite testing dbase
-                        sdate = get_start_rt(cdict, sat, logger)
+                        sdate = get_start_rt(cdict, sat)
+                    elif cdict['input_type'] =='hapi':
+                        # This is the one used for ccmc
+                        sdate = get_start_rt_hapi(cdict,sat)
+                    elif (cdict['input_type'] =='json') | (cdict['input_type'] =='json'):
+                        sdate = get_start_rt_text(cdict,sat,outdir)
                 else:
                     # Otherwise check local files in outdir
                     fname = find_last_file(outdir,'shells_*.nc')
@@ -585,247 +772,215 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                 sdate = sdate_all
 
             #---------------   Process 1 day at a time-----------------------
-            #
-            while sdate <= edate:
+            # If no start is returned for some reason then don't try to process anything
+            # and go to the next sat
+            if sdate is not None:
+                while sdate <= edate:
+                    # Todo Check what happens in real time if I try and get data that is not there
+                    logging.info(sdate.strftime("%Y%m%d")+' '+sat)
 
-                # Todo Check what happens in real time if I try and get data that is not there
-                print(sdate.strftime("%Y%m%d")+' '+sat)
+                    # Real time mode: Check if latest poes file has been updated before
+                    # pulling it so as not to annoy NOAA
+                    # Check if Last-Modified of the file is after sdate
+                    if realtime == 1:
+                        # Make a list of remote files
+                        # TODO: make sure that if the code can't connect then it exits
+                        # gracefully with a logged error
 
-                # Real time mode: Check if latest file has been updated before
-                # pulling it so as not to annoy NOAA
-                # Check if Last-Modified of the file is after sdate
-                if realtime == 1:
-                    # Make a list of remote files
-                    # TODO: make sure that if the code can't connect then it exits
-                    # gracefully with a logged error
+                        # Check what files are at noaasite for sdate and sat
+                        file_test = pu.get_file_list_remote(sat, sdate, sdate, dir_root_list=None, dtype = 'proc', swpc_root_list=None,
+                                    all=True ,site = noaasite)
 
-                    # Check what files are at noaasite for sdate and sat
-                    file_test = pu.get_file_list_remote(sat, sdate, sdate, dir_root_list=None, dtype = 'proc', swpc_root_list=None,
-                                all=True ,site = noaasite)
+                        # Get info on the first file
+                        #TODO: check that returned value is ok
+                        check_file = requests.head(file_test[0], allow_redirects=True)
 
-                    # Get info on the first file
-                    #TODO: check that returned value is ok
-                    check_file = requests.head(file_test[0], allow_redirects=True)
+                        # This is the last update to the file at NOAA
+                        fdate = dt.datetime.strptime(check_file.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S GMT')
 
-                    # This is the last update to the file at NOAA
-                    fdate = dt.datetime.strptime(check_file.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S GMT')
+                        # If it has been updated then pull the data
 
-                    # If it has been updated then pull the data
-
-                    # Passes may go across the day file boundary so get data from the prior 90
-                    # minutes to ensure a complete first pass. (Data is usually dumped once (or twice) per orbit.
-                    # i.e., if sdate is 2000-01-02 00:00:00 the code gets data the day before as well
-                    # If sdate is 2000-01-02 01:30:00 then it will just get one day of data
-                    if fdate > sdate:
-                        data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
-                                        vars=vars, all=True, dtype='proc', site=noaasite)
-                    else:
-                        data = None
-                else:
-                    # Reprocessing mode: just get the full day of data from the remote NOAA site
-                    data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
+                        # Passes may go across the day file boundary so get data from the prior 90
+                        # minutes to ensure a complete first pass. (Data is usually dumped once (or twice) per orbit.
+                        # i.e., if sdate is 2000-01-02 00:00:00 the code gets data the day before as well
+                        # If sdate is 2000-01-02 01:30:00 then it will just get one day of data
+                        if fdate > sdate:
+                            data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
                                             vars=vars, all=True, dtype='proc', site=noaasite)
-
-                # If data was returned then process it. Otherwise do nothing but log missing data
-
-                #------------------------- Process returned data ---------------------------------------
-
-                if data is not None:
-                    #------------ Make sure data starts with a complete pass -------------
-                    # Find index of sdate - 90 minutes to make sure we start with a complete pass
-                    i_last = np.where(data['time'][:] > pu.unixtime(sdate -dt.timedelta(minutes=90)) * 1000)[0]
-
-                    # Update the data dict so lists of data start at the 90 minute before index
-                    if len(i_last)>0:
-                        for key in data.keys():
-                            data[key]=data[key][i_last[0]::]
-
-                    # Fill in L_IGRF where it is -1 in the poes data (in SAA)
-                    Linds = np.where(data['L_IGRF'][:]<0)[0]
-                    Lfills = swu.get_Lvals(data, inds = Linds)
-                    data['L_IGRF'][Linds] = Lfills['Lm'][:]
-
-                    # Divide data into passes
-                    # passnums is a list of numbered passes and passInds is the index
-                    # of the endpoints of each pass
-                    passnums, passInds = pu.getLpass(data['L_IGRF'][:], dist=200, prom=.5)
-
-                    # Find the index of sdate
-                    i_last = np.where(data['time'][:] >= pu.unixtime(sdate) * 1000)[0]
-
-                    if len(i_last) > 0:
-                        # i_pass1 is the index of the pass just before sdate
-                        i_pass1 = np.where(passInds <= i_last[0])[0]
-
-                        # JGREEN 04/15/2021 Fixed this
-                        # For 1 file on 2017 09/15 the first half of data is flags so there
-                        # are no passinds< i_last and i_pass1 is [] empty.
-                        if len(i_pass1)>0:
-                            # If there is a pass right before sdate then start there
-                            sind = passInds[i_pass1[-1]] # This is the index of the pass just before start
                         else:
-                            # If not then start with the first pass after sdate
-                            sind = passInds[0]
+                            data = None
+                    else:
+                        # Reprocessing mode: just get the full day of data from the remote NOAA site
+                        data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
+                                                vars=vars, all=True, dtype='proc', site=noaasite)
 
-                        # Now adjust the dictionary so that it has data from the last pass onward
-                        # because binning is slow with lots of data
-                        for key in data.keys():
-                            data[key]=data[key][sind::]
+                    # If data was returned then process it. Otherwise do nothing but log missing data
 
-                        # ------------------------- Bin data by pass and L -----------------
-                        # The input for the NN is a full pass of poes data in .25 L bins
-                        Lbins = np.arange(1,8.5,.25) # These are the Lbins
+                    #------------------------- Process returned data ---------------------------------------
 
-                        # Returns a dictionary with 4 channels of data binned by pass and Linds
-                        # When the data is binned, a new time column is created called 'time_pass'
-                        # That has the average time of the pass not including nans
-                        # That is important because sometimes the pass is short
-                        binned_data = swu.make_Lbin_data(data, Lbins, Lcol = 'L_IGRF', vars = channels)
+                    if data is not None:
+                        #------------ Make sure data starts with a complete pass -------------
+                        # Find index of sdate - 90 minutes to make sure we start with a complete pass
+                        i_last = np.where(data['time'][:] > pu.unixtime(sdate -dt.timedelta(minutes=90)) * 1000)[0]
 
-                        # ------------------------- Get the Kp data ---------------------
-                        # Todo Update this so it can get Kp from CCMC
-                        # The NN needs Kp as an input
-                        # Get the start and end values to get Kp data as datetimes
-                        Kp_sdate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][0])
-                        Kp_edate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][-1])
+                        # Update the data dict so lists of data start at the 90 minute before index
+                        if len(i_last)>0:
+                            for key in data.keys():
+                                data[key]=data[key][i_last[0]::]
 
-                        # Kp data comes from two sources.
-                        # Recent data: from potsdam text file with last 28 days
-                        # Older data: from omnidata website because it has historical data but not real time
+                        # Fill in L_IGRF where it is -1 in the poes data (in SAA)
+                        Linds = np.where(data['L_IGRF'][:]<0)[0]
+                        Lfills = swu.get_Lvals(data, inds = Linds)
+                        data['L_IGRF'][Linds] = Lfills['Lm'][:]
 
-                        if sdate > (dt.datetime.now() - dt.timedelta(days=24)):
-                            # Get the Potsdam data and return
-                            # Kpdate(datetime), Kpdata (Kp*10), and Apdata, Kpmax
+                        # Divide data into passes
+                        # passnums is a list of numbered passes and passInds is the index
+                        # of the endpoints of each pass
+                        passnums, passInds = pu.getLpass(data['L_IGRF'][:], dist=200, prom=.5)
 
-                            mdays = 3
-                            Kpdate, Kpdata, Kpmax, Apdata = du.get_Kp_rt(sdate, sdate + dt.timedelta(days=1), days = mdays)
-                            # Todo add a check here if there is no omni data returned
-                            # In that case, I think we should flag the Kp data and set it to -99
-                            Kptime1 = pu.unixtime(Kpdate)
-                            Kptime = [1000 * co for co in Kptime1] # Change to msec like poes time
+                        # Find the index of sdate
+                        i_last = np.where(data['time'][:] >= pu.unixtime(sdate) * 1000)[0]
 
-                            # Check get_Kp_rt to see what is returned if no data is present
-                            # Make len of Kpdata equal to the length of the POES data
-                            if type(Kpdata) is list:
-                                if not Kpdata:
-                                    Kpdata = np.ones(len(binned_data['time_pass'][:])) * -99
+                        if len(i_last) > 0:
+                            # i_pass1 is the index of the pass just before sdate
+                            i_pass1 = np.where(passInds <= i_last[0])[0]
 
-                            elif type(Kpdata) is np.ndarray:
-                                if not Kpdata.tolist():
-                                    Kpdata = np.ones(len(binned_data['time_pass'][:])) * -99
-
-                            if type(Kpmax) is list:
-                                if not Kpmax:
-                                    Kpmax = np.ones(len(binned_data['time_pass'][:])) * -99
-
-                            elif type(Kpmax) is np.ndarray:
-                                if not Kpmax.tolist():
-                                    Kpdata = np.ones(len(binned_data['time_pass'][:])) * -99
-
-                            # Interpolate to the POES pass times; make as long as binned_data time variable
-                            Kpnew = np.interp(binned_data['time_pass'][:], Kptime, Kpdata)
-                            Kpfin = np.floor(Kpnew)
-                            binned_data['Kp*10'] = Kpfin
-
-                            # This is the max Kp in 3 days
-                            Kpnew = np.interp(binned_data['time_pass'][:], Kptime, Kpmax)
-                            Kpfin = np.floor(Kpnew)
-                            binned_data['Kp*10_max_'+str(mdays)+'d'] = Kpfin
-                        else:
-                            # Get Kp from omnidata
-                            mdays = 3 # Number of days for finding max Kp
-                            omvars = ['Kp*10','Kp*10_max_'+str(mdays)+'d'] # variables to interpolate
-                            # Retunrs a dict with ['time','Kp*10','Kp*10_max_3d']
-                            Kp = du.get_omni_max(Kp_sdate, Kp_edate, [omvars[0]],days=mdays)
-
-                            # Todo add a check here if there is no omni data returned
-                            # In that case, I think we should flag the Kp data and set it to -99
-                            Kptime1 = pu.unixtime(Kp['time'])
-                            Kptime = [1000 * co for co in Kptime1]
-                            if len(Kp.get('Kp*10')) == 0:
-                                Kp['Kp*10'] = np.ones(len(binned_data['time_pass'][:])) * -99
-                            if len(Kp.get('Kp*10_max_3d')) == 0:
-                                Kp['Kp*10_max_3d'] = np.ones(len(binned_data['time_pass'][:])) * -99
-
-                            # Interpolate to the pass times
-                            for omco in range(0, len(omvars)):
-                                Kpnew = np.interp(binned_data['time_pass'][:], Kptime, Kp[omvars[omco]])
-                                Kpfin = np.floor(Kpnew)
-                                binned_data[omvars[omco]]=Kpfin
-
-                        # Add the satellite name to the dict;
-                        binned_data['sat'] = [sat for x in range(0,len(binned_data['time_pass'][:]))]
-
-                        binned_data['Lbins'] = Lbins[0:-1] # We use one less because the binning needs the edge value
-                        bin_dims = ['time_pass','Lbins']
-
-                        # -------------- map binned data------------
-                        # m02 at 20 deg is what everything gets mapped to
-                        # mapping uses the cdf file with the end year closest to this year
-
-                        if sat=='m02':
-                            # If the sat is m02 there is only one cdf file because it doesn't move in LT
-                            # so always use a fixed year
-                            myear = 2018
-                        else:
-                            myear = sdate.year
-
-                        # m02 is also the reference satellite
-                        ref_syear= 2014
-                        ref_eyear = 2018
-
-                        # This bit switches time_pass to time
-                        print('Mapping data')
-
-                        map_data = swu.map_poes(binned_data, channels, sat, sat_ref, ref_ind, cdf_dir, myear, ref_syear, ref_eyear)
-                        print('Done mapping data')
-
-                        # --------------------- Now do NN if requested ----------------------------
-                        if neural:
-                            # Energies, Bmirrors, Ls based on Seths analysis
-                            Energies=np.arange(200.,3000.,200.)
-                            Ls = np.arange(3.,6.3,.25)
-
-                            Bmirrors = [np.floor(2.591e+04*(L**-2.98) )for L in Ls ]
-
-                            print('Doing nn')
-                            outdat = swu.run_nn(map_data,channels,binned_data['Kp*10'][:],binned_data['Kp*10_max_'+str(mdays)+'d'][:],
-                               out_scale,in_scale,m, L = Ls, Bmirrors = Bmirrors, Energies = Energies)
-                            print('Done with nn')
-
-                            # Save the model name with the data
-                            hdf5name = os.path.basename(hdf5File[0])
-
-                        # --------------- Write the data ------------------------
-                        # Data may go to a dbase, files at S3 bucket or locally
-                        # Todo Update this to write to a dbase
-                        print('Writing data')
-                        if configfile is not None:
-                            if dbase_type =='S3':
-                                # Right now this writes nn data to S3 bucket I think?
-                                # The S3 bucket is not setup for just inputs
-                                finish = swu.write_shells_netcdf(outdir, outdat, Ls, Bmirrors, Energies, sat, hdf5name, cdict)
+                            # JGREEN 04/15/2021 Fixed this
+                            # For 1 file on 2017 09/15 the first half of data is flags so there
+                            # are no passinds< i_last and i_pass1 is [] empty.
+                            if len(i_pass1)>0:
+                                # If there is a pass right before sdate then start there
+                                sind = passInds[i_pass1[-1]] # This is the index of the pass just before start
                             else:
-                                if neural:
-                                    pass
+                                # If not then start with the first pass after sdate
+                                sind = passInds[0]
+
+                            # Now adjust the dictionary so that it has data from the last pass onward
+                            # because binning is slow with lots of data
+                            for key in data.keys():
+                                data[key]=data[key][sind::]
+
+                            # ------------------------- Bin data by pass and L -----------------
+                            # The input for the NN is a full pass of poes data in .25 L bins
+                            Lbins = np.arange(1,8.5,.25) # These are the Lbins
+
+                            # Returns a dictionary with 4 channels of data binned by pass and Linds
+                            # When the data is binned, a new time column is created called 'time_pass'
+                            # That has the average time of the pass not including nans
+                            # That is important because sometimes the pass is short
+                            binned_data = swu.make_Lbin_data(data, Lbins, Lcol = 'L_IGRF', vars = channels)
+
+                            # ------------------------- Get the Kp data ---------------------
+                            # Todo Update this so it can get Kpmax from CCMC
+                            # The NN and the mapping need Kp as an input
+                            # Need to add Kp*10 and 'Kp*10_max_'+str(mdays)+'d' to binned data
+                            # Get the start and end values to get Kp data as datetimes
+                            Kp_sdate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][0])
+                            Kp_edate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][-1])
+
+                            # Get Kp from iswa dbase
+                            iswaserver = 'https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/'
+                            kpdataset = 'noaa_kp_p3h'
+                            Kpdata,meta= get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset)
+
+                            # Interpolate to binned data times
+                            # Change returned time to datetime and then to ctime
+                            Kptimes = hapitime2datetime(Kpdata['Time'])
+                            Kpmsecs = [dt.datetime.timestamp(x)*1000 for x in Kptimes]
+                            binned_data['Kp*10'] = 10*np.interp(binned_data['time_pass'][:], Kpmsecs, Kpdata['KP_3H'])
+
+                            # Add the satellite name to the dict;
+                            binned_data['sat'] = [sat for x in range(0,len(binned_data['time_pass'][:]))]
+
+                            binned_data['Lbins'] = Lbins[0:-1] # We use one less because the binning needs the edge value
+                            bin_dims = ['time_pass','Lbins']
+
+                            # -------------- map binned data------------
+                            # m02 at 20 deg is what everything gets mapped to
+                            # mapping uses the cdf file with the end year closest to this year
+
+                            if sat=='m02':
+                                # If the sat is m02 there is only one cdf file because it doesn't move in LT
+                                # so always use a fixed year
+                                myear = 2018
+                            else:
+                                myear = sdate.year
+
+                            # m02 is also the reference satellite
+                            ref_syear= 2014
+                            ref_eyear = 2018
+
+                            # This bit switches time_pass to time
+                            print('Mapping data')
+
+                            map_data = swu.map_poes(binned_data, channels, sat, sat_ref, ref_ind, cdf_dir, myear, ref_syear, ref_eyear)
+                            map_data['L_IGRF'] = Lbins[0:-1]
+                            map_data['dims'] = ['time','L_IGRF']
+                            map_data['sat'] = sat
+                            map_data['Kp*10']=binned_data['Kp*10']
+                            print('Done mapping data')
+
+                            # --------------------- Now do NN if requested ----------------------------
+                            if neural:
+                                # Todo: Get the max Kp in last 3 days i fthis is requested
+                                # Energies, Bmirrors, Ls based on Seths analysis
+                                Energies=np.arange(200.,3000.,200.)
+                                Ls = np.arange(3.,6.3,.25)
+
+                                Bmirrors = [np.floor(2.591e+04*(L**-2.98) )for L in Ls ]
+
+                                print('Doing nn')
+                                outdat = swu.run_nn(map_data,channels,binned_data['Kp*10'][:],binned_data['Kp*10_max_'+str(mdays)+'d'][:],
+                                   out_scale,in_scale,m, L = Ls, Bmirrors = Bmirrors, Energies = Energies)
+                                outdat['dims']=['time','L']
+                                outdat['sat'] = sat
+                                print('Done with nn')
+
+                                # Save the model name with the data
+                                hdf5name = os.path.basename(hdf5File[0])
+                            else:
+                                # The binned data and the map_data are the same and have a dict
+                                # with an array for each flux that is timeXLbins
+                                # But the nn data output is a dict with seperate cols for each E and L
+
+                                outdat = map_data
+
+                            # --------------- Write the data ------------------------
+                            # Data may go to a dbase, files at S3 bucket or local files
+                            # Todo Update this to write to a dbase
+                            print('Writing data')
+                            if configfile is not None:
+                                # If there is a configfile then it is either writing to
+                                # S3, a csv file for CCMC, or a database
+                                if dbase_type =='S3':
+                                    # Write data to the S3 bucket
+                                    # The S3 bucket is not setup for inputs its just neural data
+                                    finish = swu.write_shells_netcdf_S3(outdir, outdat, Ls, Bmirrors, Energies, sat, hdf5name, cdict)
                                 else:
-                                    # If were writing shells inputs to the dbase
-                                    # map_data has time and channels in a dict
-                                    finish = write_shells_inputs_dbase(cdict,map_data,channels,sat,logger)
-                        print('Done writing data')
+                                    if ((cdict['output_type']=='csv')|(cdict['output_type']=='json')):
+                                        # Add data to daily files or dbase
+                                        # Todo make it so that it can write to dbase too
+                                        finish = swu.write_shells(outdir,outdat,cdict['output_type'],cdict['fname'])
+                                    else:
+                                        pass
+                            else:
+                                # Todo: this should just write to a local files
+                                # Maybe I will take this out
+                                pass
+                            print('Done writing data')
+                        else:
+                            # Don't crash the program if data is missing but log a msg
+                            msg = 'No data for ' + sat + ' ' + sdate.strftime("%Y-%m-%d")
+                            logging.warning(msg)
                     else:
                         # Don't crash the program if data is missing but log a msg
-                        msg = 'No data for ' + sat + ' ' + sdate.strftime("%Y-%m-%d")
-                        logging.warning(msg)
-                else:
-                    # Don't crash the program if data is missing but log a msg
-                    # Todo: Just a log a message of it is not real time
-                    # I don't think we want to do this for real time.
-                    # all the satellites will not update every 5 minuts
-                    if ~realtime:
-                        msg = 'No data for '+sat+' '+sdate.strftime("%Y-%m-%d")
-                        logging.warning(msg)
-                sdate = (sdate+dt.timedelta(days=1)).replace(hour = 0, minute=0, second=0, microsecond=0)
+                        # if it is not real time because not all sats will update every
+                        # 5 minutes so that is too many logs
+                        if ~realtime:
+                            msg = 'No data for '+sat+' '+sdate.strftime("%Y-%m-%d")
+                            logging.warning(msg)
+                    # Process the next day of data
+                    sdate = (sdate+dt.timedelta(days=1)).replace(hour = 0, minute=0, second=0, microsecond=0)
 
     except Exception as e:
         # If there are any exceptions then log the error
@@ -1011,9 +1166,17 @@ if __name__ == "__main__":
                         help="The full directory and name of the config file",
                         default = os.path.join(os.getcwd(),'shells_config.ini'),
                         required=False)
+    parser.add_argument('-cs', "--csection",
+                        help="The section header of the config file to use",
+                        default = 'DEFAULT',
+                        required=False)
     args = parser.parse_args()
 
 
     #----------------------------------------------------------------
 
-    x = process_SHELLS(sdate_all=args.startdate, edate=args.enddate, realtime=args.realtime, doNN=args.neural,localdir=args.localdir, outdir=args.outdir, cdfdir=args.cdfdir, noaasite=args.noaasite, sats=args.sats, vars=args.vars, channels=args.channels, model=args.model[0], modeldir=args.modeldir[0], logfile=args.logfile, configfile=args.config)
+    x = process_SHELLS(sdate_all=args.startdate, edate=args.enddate, realtime=args.realtime,
+                       doNN=args.neural,localdir=args.localdir, outdir=args.outdir,
+                       cdfdir=args.cdfdir, noaasite=args.noaasite, sats=args.sats, vars=args.vars, channels=args.channels,
+                       model=args.model[0], modeldir=args.modeldir[0], logfile=args.logfile,
+                       configfile=args.config,csection = args.csection)

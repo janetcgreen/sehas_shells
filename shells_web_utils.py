@@ -1,14 +1,11 @@
 import datetime as dt
 import numpy as np
-import poes_utils as pu
-import data_utils as du
 import copy
 import matplotlib.pyplot as plt
 import scipy.optimize
 from scipy import stats
 from scipy.signal import savgol_filter
 import configparser
-#import mysql.connector
 import logging
 import math
 import os
@@ -17,6 +14,12 @@ import sys
 import configparser
 import io
 import boto3
+import glob
+import json
+import csv
+import pandas as pd
+from json import encoder
+#encoder.FLOAT_REPR = lambda o: format(o, '.5f')
 #from sklearn.externals.joblib import load
 from joblib import load
 import keras
@@ -24,22 +27,31 @@ from spacepy import coordinates as coord
 from spacepy import time
 from spacepy.irbempy import get_Lstar
 import spacepy as sp
-#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
-import time as ti
+#import data_utils as du
+#import time as ti
+
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logger = logging.getLogger(__name__)
+
+# To override the default severity of logging
+logger.setLevel('INFO')
 
 
-def read_config(configfile):
+def read_config(configfile,section):
     '''
     PURPOSE: To read a shells config file and return
-    # a dict with values and the section name (S3 or Dbase)
+    # a dict with values and the section name
     # S3 has the info for connecting to an S3 bucket and creating files
     # Dbase has the info for connecting to a dbase
     # The assumed structure of the config file is
-    # [Dbase]
+    # [Section name]
     # dbuser = username
     # dbpass = password
-    # etc.
+    # The config file will need an input_type and an output_type
+    # input_type can be hapi,S3,dbase
+    # output_type can be csv,nc,json,dbase
 
     :param configfile (str): location and name of the configfile
     :return: cdict, config.sections()[0]
@@ -47,27 +59,29 @@ def read_config(configfile):
     try:
         config = configparser.ConfigParser() # Create config object
         config.read(configfile)
-        cdict = dict(config.items(config.sections()[0]))
+        cdict = dict(config.items(section))
         # Check that the configfile has the right info
         # Raises exception and writes in logfile 'Config file must have '+ key if not
-        if config.items(config.sections()[0]) =='S3':
+        if section =='S3':
             # This is for the S3 bucket
             keys = ['service_name', 'region_name', 'aws_access_key_id', 'aws_secret_access_key']
             checkKey(cdict, keys)
-        elif config.items(config.sections()[0]) =='Dbase':
-            # This is for the dbase
-            keys = ['dbuser','dbpass','dbhost','dbase','inputstbl','sattbl']
+        if ((cdict['input_type']=='dbase') | (cdict['output_type']=='dbase')):
+            # If you want to read or write data to a dbase then you need
+            # to have user password info etc
+            keys = ['dbuser','dbpass','dbhost','dbase','inputstbl']
             checkKey(cdict, keys)
-        else:
-            # This is for testing
-            keys = [ 'dbase', 'inputstbl', 'sattbl']
-            checkKey(cdict, keys)
+        if cdict['input_type']=='sqlite':
+            # For sqlite you don't need passwords etc
+            keys = [ 'dbase', 'inputstbl']
+            checkKey(cdict, keys)         
 
     except Exception as e:
-        logging.exception(e)
+        logger.exception(e)
         raise Exception("Trouble reading config info:" + str(e.args))
         #return None
-    return cdict, config.sections()[0]
+    #logger.info('Read config file')
+    return cdict, section
 
 def checkKey(testdict, keys):
     '''
@@ -89,6 +103,37 @@ def checkKey(testdict, keys):
             raise Exception(msg)
     return
 
+class poes_sat_sem2:
+    # PURPOSE to hold the info for all the poes sem2
+    # satellites that will be needed
+    def __init__(self, shortname):
+        self.shortname = shortname.lower()
+    all_poes_sats=['n15','n16','n17','n18','n19','m01','m02','m03']
+    def sdate(self):
+        sdates = {
+              'n15': dt.datetime(1998,7,1),'n16':dt.datetime(2001,1,10),'n17':dt.datetime(2002,7,12),
+              'n18':dt.datetime(2005,6,7),'n19':dt.datetime(2009,2,23),'m01':dt.datetime(2012,10,3),
+              'm02':dt.datetime(2006,12,3),'m03':dt.datetime(2019,1,1)}
+        return sdates[self.shortname]
+    
+    def edate(self):
+        edates = {
+              'n15': None, 'n16': dt.datetime(2014, 7, 11), 'n17': dt.datetime(2013, 4, 10),
+              'n18': None, 'n19': None, 'm01': None,
+              'm02': dt.datetime(2021, 11, 16), 'm03': None}
+        return edates[self.shortname]
+    def longname(self):
+        longnames={
+        'n15':'noaa15','n16':'noaa16','n17':'noaa17','n18':'noaa18',
+            'n19':'noaa19','m01':'metop01','m02':'metop02','m03':'metop03'
+        }
+        return longames[self.shortname]
+    def satid(self):
+        satids ={'n15':1,'n16':2,'n17':3,'n18':4,
+            'n19':5,'m01':6,'m02':7,'m03':8}
+        return satids[self.shortname]
+
+
 def satname_to_id(satname):
     all_poes_sats=['n15','n16','n17','n18','n19','m01','m02','m03']
     satId= all_poes_sats.index(satname)+1
@@ -98,6 +143,32 @@ def poeschan_to_id(channel):
     all_poes_channels=['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
     chId= all_poes_channels.index(channel)+1
     return chId
+
+
+def get_HAPI_data(url,id,sdate,edate,params=None,format='json'):
+    '''
+    PRUPOSE: To get data from a HAPI server
+    :param url:
+    :param id (str): name of data id
+    :param sdate (datetime):
+    :param edate (datetime):
+    :param params(list(str)): list of parameters to get
+    :param format(str): should be json or text
+    :return:
+    '''
+    datastr = 'data?id='+id
+    tminstr = '&time.min='+sdate.strftime('%Y-%m-%dT%H:%M:%S')+'.0Z'
+    tmaxstr = '&time.max='+edate.strftime('%Y-%m-%dT%H:%M:%S')+'.0Z'
+    Hquery = url+datastr+tminstr+tmaxstr
+    if params is not None:
+        pstr = '&parameters='+','.join(params)
+        Hquery = Hquery+pstr
+    if format =='json':
+        Hquery = Hquery+'&format=json'
+    
+    return Hquery
+
+    
 
 
 #---------------------------------------------------------------------------------------------------------------------
@@ -386,7 +457,7 @@ def map_poes(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_ey
         # So if you don't find a file for the current year then look back one year
         if ~os.path.exists(satsarfile):
             newyear = eyear_all
-            while (~os.path.exists(satsarfile)) & (newyear>=eyear_all-1):
+            while (~os.path.exists(satsarfile)) & (newyear>=eyear_all-2):
                 satsarfile = os.path.join(cdf_dir, sat, 'poes_cdf_' + sat + '_' + str(newyear-4).zfill(4) + '_' \
                                           + str(newyear).zfill(4) + evars[eco] + '.nc')
                 newyear=newyear-1
@@ -540,6 +611,9 @@ def run_nn(data,evars,Kpdata,Kpmax_data,out_scale,in_scale,m, L = None, Bmirrors
 
     # Create a dict for the output data
     outdat = {}
+    outdat['L'] = L
+    outdat['Bmirrors'] = Bmirrors
+    outdat['Energies'] = Energies
     # Then create arrays for each E and E quantiles
     for E in Energies:
         col = 'E flux '+str(int(E))
@@ -594,7 +668,7 @@ def run_nn(data,evars,Kpdata,Kpmax_data,out_scale,in_scale,m, L = None, Bmirrors
     #plt.pcolormesh(pu.unix_time_ms_to_datetime(outdat['time'][:]), np.arange(0,29),np.transpose(data[evars[2]][:,:]))
     return outdat
 
-def write_shells_netcdf(outdir, outdat, Ls, Bmirrors, Energies, sat, modelname, cdata):
+def write_shells_netcdf_S3(outdir, outdat, Ls, Bmirrors, Energies, sat, modelname, cdata):
     '''
     PURPOSE: To write the data to netcdf files under outdir
     :param outdir: Directory to write the data with YYYY/SHELLS_YYYYMMDD.nc beneath
@@ -847,10 +921,178 @@ def write_shells_netcdf(outdir, outdat, Ls, Bmirrors, Energies, sat, modelname, 
             res = result.get('ResponseMetadata')
 
         fdate = (fdate+dt.timedelta(days=1)).replace(hour=0,minute=0,second=0,microsecond=0)
+
+
+def write_shells(outdir, outdat, otype, fname):
+    if (otype == 'json') | (otype =='csv'):
+        if outdir is None:
+            outdir = os.getcwd()
+        # This writes files to an existing daily json file called
+        # either shells_inputs_YYYYMMDD_HHMMSS
+        # or shells_YYYMMDD_HHMMSS
+        finish = write_shells_text(outdir, outdat, fname,otype)
+    elif cdict['outfile_type'] == 'nc':
+        if outdir is None:
+            outdir = os.getcwd()
+            finish = write_shells_netcdf(outdir, outdat,neural,fname)
+    else:
+        # This will write the data to a dbase
+        # Todo fix this
+        finish = write_shells_inputs_dbase(cdict, map_data, channels, sat, logger)
+
+def write_shells_text(outdir, outdat, fname, otype):
+    '''
+    PURPOSE: To write the shells input or neural data to a json file
+    :param outdir (str): The directory location to write the files to
+    :param outdat (str): The data to write out
+    :param fname (str): the base name of the file to write
+    :param otype (str): either 'csv' or 'json'
+    :return:
+    
+    This writes out the mapped shells input data or the neural network data
+    Both are stored as dicts of arrays with dimensions timexL for each E flux
+    The dimensions are passed as outdat['dims'] = ['time','L_IGRF']
+    The data are reformated here to have a column/key for each E and L bin
+    New data is added to existing files for that day and then the filename
+    is changed to have the time of the last datapoint.
+    
+    Writes out time, e1 L1, e1 L2, ...e2 L1, e2 L2, ... Kp, satId
+    '''
+    # Get the start and end time of the data
+
+    fstart = outdat['time'][0]
+    fdate = pu.unix_time_ms_to_datetime(fstart) # Change to datetime
+    fedate = pu.unix_time_ms_to_datetime(outdat['time'][-1])
+    dformat ='%Y-%m-%dT%H:%M:%S.%fZ'
+
+    # Get just the eflux columns
+    fcols = [x for x in list(outdat.keys()) if 'flux' in x]
+
+    newtime = pu.unix_time_ms_to_datetime(outdat['time'])
+
+    # Add data to daily files
+    while fdate<fedate:
+        # Reformat the outdat dict so that every e flux and L has a key
+        # and get only values for fdate
+        nextday = (fdate+dt.timedelta(days = 1)).replace(hour = 0,minute=0,second=0,microsecond=0)
+        dayinds = np.where((newtime>=fdate) & (newtime<nextday))[0]
+
+        newdat = {} # This is the reformatted new data that will be written
+        
+        # Create a string from time that json/csv can write
+        newdat['time'] = [newtime[x].strftime(dformat) for x in dayinds]
+        for key in fcols:
+            # Split data into lists for each L bin and E
+            if len(np.shape(outdat[key]))>1:
+                Lname = [i for i in outdat['dims'] if 'L' in i][0] # Get the L name and
+                for lco,Lval in enumerate(outdat[Lname]):
+                    newcol= key+'_L_'+str(Lval) # rename the cols to have e flux name and L bin
+                    newdat[newcol] = list(outdat[key][dayinds,lco])
+            else:
+                newdat[key] = list(outdat[key][dayinds])
         
 
+        # Add the Kp value that was used
+        Kpcol =  [x for x in list(outdat.keys()) if 'Kp' in x][0]
+        newdat[Kpcol] = list(outdat[Kpcol][dayinds])
 
+        # Add a satid col
+        satid = poes_sat_sem2(outdat['sat']).satid()
+        newdat['satID'] = [satid]*len(dayinds)
 
+        # Check if there is a daily file started already
+        fout = os.path.join(outdir,fname+'_'+fdate.strftime('%Y%m%d')+'*.'+otype)
+        flist = glob.glob(fout)
+        
+        if len(flist)>0:
+            # If there is a file already, then read in the data
+            # Opening JSON file
+            if otype == 'json':
+                with open(flist[0], 'r') as openfile:
+                    oldat = json.load(openfile)
+            else:
+                #
+                oldat = pd.read_csv(flist[0]).to_dict(orient='list')
+            
+            oflag = [0]*len(oldat['time'])
+            otime = [dt.datetime.strptime(x, dformat).timestamp() for x in oldat['time']]
+            nflag = [1]*len(dayinds)
+            ntime = [dt.datetime.timestamp(newtime[x]) for x in dayinds]
+            # Now append the new data, get rid of dups and rewrite the file
+            alltimes = np.array(otime+ntime)
+            order_times = np.argsort(alltimes) # sorted indices
+            sortedtimes = alltimes[order_times]
+            
+            allflags = np.append(oflag, nflag)
+            sortflags = allflags[order_times]
+
+            # diff sbtracts next -prior
+            test_t = np.diff(sortedtimes)
+
+            # These are the duplicate times
+            # The times are sometimes off by msecs
+            dups = np.where(np.abs(test_t) < 5)[0]
+
+            # Now replace any dups with the new data
+            for dval in dups:
+                # Set the duplicate value of old data to 0
+                if sortflags[dval] == 0:
+                    sortedtimes[dval] = 0
+                else:
+                    sortedtimes[dval + 1] = 0
+            # Now sortedtimes should have 0s for data we don't want to keep
+            good_inds = np.where(sortedtimes>0)[0]
+
+            for key in list(newdat.keys()):
+                temp = oldat[key]+newdat[key]
+                newdat[key] = [temp[order_times[x]] for x in good_inds]
+            if otype=='json':
+                json_object = json.dumps(round_floats(newdat), indent=4)
+                
+        else:
+            # Serializing json
+            if otype=='json':
+                json_object = json.dumps(round_floats(newdat), indent=4)
+
+        # Writing file
+        tfile = dt.datetime.strptime(newdat['time'][-1],dformat)
+        foutnow = os.path.join(outdir,fname+'_'+tfile.strftime('%Y%m%dT%H%M%S')+'.'+otype)
+
+        if otype == 'json':
+            with open(foutnow, "w") as outfile:
+                outfile.write(json_object)
+        else:
+            with open(foutnow, "w") as outfile:
+
+                # pass the csv file to csv.writer function.
+                writer = csv.writer(outfile)
+
+                # pass dict keys to writerow
+                # function to give the columns 
+                writer.writerow(newdat.keys())
+
+                # use writerows function to append values to the corresponding
+                # columns using zip function.
+                writer.writerows(zip(*round_floats(newdat).values()))
+
+        if len(flist)>0:
+            # If its updating in real time then the HMS of the filname
+            # will change as new data is added so delete the old one
+            if foutnow !=flist[0]:
+                os.remove(flist[0])
+
+        fdate = nextday
+
+    return
+
+def round_floats(o):
+    if isinstance(o, float):
+        return round(o, 5)
+    if isinstance(o, dict):
+        return {k: round_floats(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [round_floats(x) for x in o]
+    return o
 
 
 def get_Lvals(data, inds=None):
