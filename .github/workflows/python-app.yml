@@ -1,4 +1,4 @@
-name: run test_process_SHELLS_inputs.py
+name: Python script (main)
 
 on:
   push:
