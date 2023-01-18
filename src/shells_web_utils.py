@@ -27,7 +27,7 @@ from spacepy import coordinates as coord
 from spacepy import time
 from spacepy.irbempy import get_Lstar
 import spacepy as sp
-sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
 #import data_utils as du
 #import time as ti
@@ -971,7 +971,7 @@ def write_shells_text(outdir, outdat, fname, otype):
     newtime = pu.unix_time_ms_to_datetime(outdat['time'])
 
     # Add data to daily files
-    while fdate<fedate:
+    while fdate<=fedate:
         # Reformat the outdat dict so that every e flux and L has a key
         # and get only values for fdate
         nextday = (fdate+dt.timedelta(days = 1)).replace(hour = 0,minute=0,second=0,microsecond=0)
@@ -980,7 +980,9 @@ def write_shells_text(outdir, outdat, fname, otype):
         newdat = {} # This is the reformatted new data that will be written
         
         # Create a string from time that json/csv can write
+
         newdat['time'] = [newtime[x].strftime(dformat) for x in dayinds]
+
         for key in fcols:
             # Split data into lists for each L bin and E
             if len(np.shape(outdat[key]))>1:

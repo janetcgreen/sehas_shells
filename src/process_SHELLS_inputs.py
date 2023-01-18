@@ -415,7 +415,7 @@ def get_start_rt_text(cdict,sat,outdir):
         # Files will be called fname+'_YYYYMMDDTHHMMSS.' input_type (either json or csv)
         # Check if there is a daily file started already
         fout = os.path.join(outdir,'**',cdict['fname']+'*.'+cdict['input_type'])
-        flist = glob.glob(fout)
+        flist = glob.glob(fout,recursive=True)
         if len(flist)<1:
             sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
         else:
@@ -432,11 +432,13 @@ def get_start_rt_text(cdict,sat,outdir):
                 satIDs = np.array(lastdata['satID'])
                 inds = np.where(satIDs==satinfo.satid())[0]
                 if len(inds)>0:
-                    ltime = dt.datetime.strptime(lastdata[inds[-1]],dformat)
+                    ltime = dt.datetime.strptime(lastdata['time'][inds[-1]],dformat)
                 fco = fco +1
             if ltime is None:
+                # If there are no old files then start with today
                 sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
             else:
+                #
                 sdate = ltime
 
     else:
@@ -552,6 +554,25 @@ def write_shells_inputs_dbase(cdict,map_data,channels,sat,logger):
 
     print('Here')
     return
+
+def get_Kp_max(Kpdata,Kpmsecs,days,times):
+    '''
+
+    :param Kpdata dict: A structure that has the Kp data as??
+    :param Kpmsecs: time in msecs since 1970
+    :param days: The number of days back to find the max
+    :param time: The time col to get the max for
+    :return: Kpmax
+    '''
+
+    Kpmax = np.zeros((0),dtype= float)
+    for co in range(0,len(times)):
+        # Get the indices
+        minds = np.where((Kpmsecs>=times[co]-days*24*360000) & (Kpmsecs<=times[co]))[0]
+        maxval = np.max(Kpdata[minds])
+        Kpmax = np.append(Kpmax,maxval)
+
+    return Kpmax
 
 
 #------------------- The main process_SHELLS function--------------------------
@@ -750,11 +771,12 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                     elif cdict['input_type']=='Dbase':
                         # Or get start date from an sql dbase
                         # Todo make this also work with sqlite testing dbase
+                        # And add a test
                         sdate = get_start_rt(cdict, sat)
                     elif cdict['input_type'] =='hapi':
                         # This is the one used for ccmc
                         sdate = get_start_rt_hapi(cdict,sat)
-                    elif (cdict['input_type'] =='json') | (cdict['input_type'] =='json'):
+                    elif (cdict['input_type'] =='json') | (cdict['input_type'] =='csv'):
                         sdate = get_start_rt_text(cdict,sat,outdir)
                 else:
                     # Otherwise check local files in outdir
@@ -875,7 +897,10 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             # The NN and the mapping need Kp as an input
                             # Need to add Kp*10 and 'Kp*10_max_'+str(mdays)+'d' to binned data
                             # Get the start and end values to get Kp data as datetimes
-                            Kp_sdate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][0])
+                            Kp_sdate1 = pu.unix_time_ms_to_datetime(binned_data['time_pass'][0])
+                            # We actually go back 3 days because we need the max in the last 3 days
+                            # for NN as well
+                            Kp_sdate = Kp_sdate1-dt.timedelta(days = 3)
                             Kp_edate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][-1])
 
                             # Get Kp from iswa dbase
@@ -886,8 +911,14 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             # Interpolate to binned data times
                             # Change returned time to datetime and then to ctime
                             Kptimes = hapitime2datetime(Kpdata['Time'])
+                            # Todo make sure this returns the right ctime
                             Kpmsecs = [dt.datetime.timestamp(x)*1000 for x in Kptimes]
                             binned_data['Kp*10'] = 10*np.interp(binned_data['time_pass'][:], Kpmsecs, Kpdata['KP_3H'])
+
+                            # Todo make a test for this
+                            # Todo Should this be Kp*10?
+                            binned_data['Kp_max'] = get_Kp_max(Kpdata['KP_3H'],Kpmsecs,3,binned_data['time_pass'])
+
 
                             # Add the satellite name to the dict;
                             binned_data['sat'] = [sat for x in range(0,len(binned_data['time_pass'][:]))]

@@ -10,8 +10,10 @@ import glob
 import json
 from datetime import timezone
 import pandas as pd
+import tempfile
+import shutil
 
-sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 #sys.path.insert(1, '/efs/spamstaging/live/chargehaz/')
 import shells_web_utils as swu
 
@@ -46,7 +48,9 @@ class test_process_shells_inputs(unittest.TestCase):
                 print(err)
             else:
                 print("OK")
-        print("TEST SETUP: Done with tables")
+        print("*** TEST SETUP: Done with tables")
+
+        self.test_dir = tempfile.mkdtemp()
 
     def tearDown(self):
         # ------------------------------------------------
@@ -55,7 +59,9 @@ class test_process_shells_inputs(unittest.TestCase):
         # 2) delete the channel test_channel
         # 3) Remove the log file
         #--------------------------------------------------
-        pass
+        # Remove the directory after the test
+        shutil.rmtree(self.test_dir)
+
 
     def get_shells_tables(self):
         '''
@@ -105,7 +111,7 @@ class test_process_shells_inputs(unittest.TestCase):
         #===============================================================
         # TEST: Check that test sqlite dbase connection works
         #==============================================================
-        print('TEST: Check that test sqlite dbase connection works')
+        print('*** TEST: Check that test sqlite dbase connection works')
         conn = pr.connectToDb(self.cdict)
         self.assertTrue(conn is not None)
         conn.close()
@@ -114,7 +120,7 @@ class test_process_shells_inputs(unittest.TestCase):
         #===============================================================
         # TEST: Check that test sqlite real time mode returns a valid start date
         #==============================================================
-        print('TEST: Check that test sqlite real time mode returns a valid start date')
+        print('*** TEST: Check that test sqlite real time mode returns a valid start date')
         # This testing config file has
         # dbase = sehas_shells
         # inputstbl = ShellsInputsTbl
@@ -133,10 +139,10 @@ class test_process_shells_inputs(unittest.TestCase):
         #===============================================================
         # TEST: Check that CCMC real time mode returns a valid start date
         #==============================================================
-        # This CCMC config file has
+        # Under SHELLS_CCMC this config file has
         # server=https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/
         # shells_data_table = shells_inputs
-        print('TEST: Check that CCMC real time mode returns a valid start date')
+        print('*** TEST: Check that CCMC real time mode returns a valid start date')
 
         # Return a dictionary with the items in the config file
         # and the dbase_type i.e. S3,CCMC, etc
@@ -154,7 +160,7 @@ class test_process_shells_inputs(unittest.TestCase):
         #================================================================
         # TEST: Check that the poes_sat_sem2 class returns a mission start
         #================================================================
-        print('TEST:Check that the poes_sat_sem2 class returns a mission start')
+        print('*** TEST:Check that the poes_sat_sem2 class returns a mission start')
         satclass = swu.poes_sat_sem2('N16')
         sdate = satclass.sdate()
         self.assertEqual(sdate,dt.datetime(2001,1,10,0,0))
@@ -175,30 +181,32 @@ class test_process_shells_inputs(unittest.TestCase):
         # inputstbl = ShellsInputsTbl
         # output_type = csv
         # fname = shells_inputs
-        # This should create a file called shells_inputs_20220101HHMMSS.json
-        print('TEST:Check csv file creation when running in reprocessing mode')
+        # This should create a file called shells_inputs_20220101HHMMSS.csv
+        print('*** TEST:Check csv file creation when running in reprocessing mode')
 
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_CSV')
+        # Check if a testfile exists and delete it
         fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.csv'
-        flist = glob.glob(os.path.join(os.getcwd(),fbase))
+        flist = glob.glob(os.path.join(self.test_dir,fbase))
         if len(flist)>1:
             os.remove(flist[0])
 
+        # Run the code that should create a csv file for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, None, './SHELLS/cdf/',
+                          False, False, None, self.test_dir, './SHELLS/cdf/',
                           "satdat.ngdc.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                 'mep_ele_tel90_flux_e4'],
                           ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                     'mep_ele_tel90_flux_e4'],
-                          None, None,'./test_process_shells_',
+                          None, None,os.path.join(self.test_dir,'test_process_shells_'),
                           self.configfile,'SHELLS_TESTING_CSV')
 
         # Check that the file is created and has a certain length
 
         fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.csv'
-        flist = glob.glob(os.path.join(os.getcwd(),fbase))
+        flist = glob.glob(os.path.join(self.test_dir,fbase))
         if len(flist)>0:
             with open(flist[0], 'r') as openfile:
                 testfile = pd.read_csv(openfile).to_dict(orient='list')
@@ -229,23 +237,31 @@ class test_process_shells_inputs(unittest.TestCase):
         # output_type = json
         # fname = shells_inputs
         # This should create a file called shells_inputs_20220101HHMMSS.json
-        print('TEST: Check json file creation when running in reprocessing mode')
+        print('*** TEST: Check json file creation when running in reprocessing mode')
+
+        # Read the config file to get the filename
+        cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
+        # Check if a testfile exists and delete it
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
+        flist = glob.glob(os.path.join(os.getcwd(),fbase))
+        if len(flist)>1:
+            os.remove(flist[0])
 
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, None, './SHELLS/cdf/',
+                          False, False, None, self.test_dir, './SHELLS/cdf/',
                           "satdat.ngdc.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                 'mep_ele_tel90_flux_e4'],
                           ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                     'mep_ele_tel90_flux_e4'],
-                          None, None,'./test_process_shells_',
+                          None, None,os.path.join(self.test_dir,'test_process_shells_'),
                           self.configfile,'SHELLS_TESTING_JSON')
 
         # Check that the file is created and has a certain length
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
         fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
-        flist = glob.glob(os.path.join(os.getcwd(),fbase))
+        flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
             with open(flist[0], 'r') as openfile:
@@ -263,7 +279,7 @@ class test_process_shells_inputs(unittest.TestCase):
     def test_B_run_shells_reprocess_overwrite(self):
         #============================================================
         # TEST:Check that old data is overwritten by new data when adding
-        # to existing file
+        # to an existing file
         #============================================================
         # First create an existing json file of data like in the last test
         #
@@ -274,37 +290,38 @@ class test_process_shells_inputs(unittest.TestCase):
         # output_type = json
         # fname = shells_inputs
         # This should create a file called shells_inputs_test_20220101HHMMSS.json
-        print('TEST:Check that old data is overwritten')
+        print('*** TEST:Check that old data is overwritten**')
 
         # Delete any old testing files. This won't delete good files because
         # fname has test in it
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
         fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
-        flist = glob.glob(os.path.join(os.getcwd(),fbase))
+        flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
             os.remove(flist[0])
 
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, None, './SHELLS/cdf/',
+                          False, False, None, self.test_dir, './SHELLS/cdf/',
                           "satdat.ngdc.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                 'mep_ele_tel90_flux_e4'],
                           ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                     'mep_ele_tel90_flux_e4'],
-                          None, None,'./test_process_shells_',
+                          None, None,os.path.join(self.test_dir,'./test_process_shells_'),
                           self.configfile,'SHELLS_TESTING_JSON')
 
         # Now read the file created above
         fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
-        flist = glob.glob(os.path.join(os.getcwd(),fbase))
+        flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
             with open(flist[0], 'r') as openfile:
                 testfile = json.load(openfile)
 
         # Now try to overwrite the file with all -1
+        # Create a fake set of data outdat
         outdat={}
         keys = [x for x in list(testfile.keys()) if x not in ['time', 'satId']]
         for key in keys:
@@ -317,7 +334,7 @@ class test_process_shells_inputs(unittest.TestCase):
         # But timestamp assumes it is MT
         outdat['time'] = [dt.datetime.strptime(x,dformat).replace(tzinfo=timezone.utc).timestamp()*1000 for x in testfile['time']]
 
-        swu.write_shells_text(os.getcwd(), outdat, cdict['fname'],'json')
+        swu.write_shells_text(self.test_dir, outdat, cdict['fname'],'json')
 
         # Then check that it is all -1s
         # Read the file back in
@@ -341,15 +358,15 @@ class test_process_shells_inputs(unittest.TestCase):
         os.remove(flist[0])
         self.assertEqual(1, testit)
 
-    def test_B_run_shells_csv_realtime(self):
+    def test_B_run_shells_csv_realtime_start(self):
         #==================================================
         # TEST: Check that todays date is returned when no csv files exist yet
         #==================================================
         # If you start running in real time with no data then it should
         # begin processing data for the current day
-
+        print('*** TEST: Check that todays date is returned when no csv files exist yet')
         cdict, dbtype = swu.read_config(self.configfile, 'SHELLS_TESTING_RT')
-        outdir = os.getcwd()
+        outdir = self.test_dir
         sat = 'n15'
         sdate = pr.get_start_rt_text(cdict, sat, outdir)
 
@@ -363,33 +380,72 @@ class test_process_shells_inputs(unittest.TestCase):
         # Start by creating a csv file in reprocessing mode for the
         # previous day
         # Then update it in rt mode
+        print('*** TEST: Check that a csv file updates in real time mode')
 
         cdict, dbtype = swu.read_config(self.configfile, 'SHELLS_TESTING_RT')
-        outdir = os.getcwd()
+        outdir = self.test_dir
         sat = 'n15'
         sdate =(dt.datetime.utcnow()-dt.timedelta(days=1))
-        # This should add a file the day before
+        # This should add a file for the day before
         pr.process_SHELLS(sdate, sdate,
-                          False, False, None, None, './SHELLS/cdf/',
+                          False, False, None, outdir, './SHELLS/cdf/',
                           "satdat.ngdc.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                            'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                            'mep_ele_tel90_flux_e4'],
                           ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                            'mep_ele_tel90_flux_e4'],
-                          None, None, './test_process_shells_',
+                          None, None, os.path.join(self.test_dir,'test_process_shells_'),
                           self.configfile, 'SHELLS_TESTING_RT')
+
+        # Get the last processed time for the file
+        dformat = '%Y%m%d'
+        fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
+        flist = glob.glob(os.path.join(self.test_dir,fbase))
+        flist.reverse()
+        dat = pd.read_csv(flist[0]).to_dict(orient='list')
+        dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
+        lasttime = dt.datetime.strptime(dat['time'][-1],dformat)
+
         # Then try to update in rt
         pr.process_SHELLS(None, None,
-                          True, False, None, None, './SHELLS/cdf/',
+                          True, False, None, self.test_dir, './SHELLS/cdf/',
                           "satdat.ngdc.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                            'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                            'mep_ele_tel90_flux_e4'],
                           ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                            'mep_ele_tel90_flux_e4'],
-                          None, None, './test_process_shells_',
+                          None, None, os.path.join(self.test_dir,'test_process_shells_'),
                           self.configfile, 'SHELLS_TESTING_RT')
+
+        # Check that the csv file updated as expected
+        # Get the last processed time for the file
+        # This might fail if you run it at 1:00 UT because there might
+        # not be new data
+        dformat = '%Y%m%d'
+        sdate = dt.datetime.utcnow()
+        fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
+        flist = glob.glob(os.path.join(self.test_dir,fbase))
+        flist.reverse()
+        dat = pd.read_csv(flist[0]).to_dict(orient='list')
+        dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
+        updatedtime = dt.datetime.strptime(dat['time'][-1],dformat)
+        # Check the time
+        if updatedtime>lasttime:
+            testit = 1
+        else:
+            testit =0
+
+        # Now cleanup
+
+        fbase = cdict['fname']+'_'+'*.csv'
+        flist = glob.glob(os.path.join(self.test_dir, fbase))
+        for file in flist:
+            os.remove(file)
+
+        self.assertEqual(testit,1)
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

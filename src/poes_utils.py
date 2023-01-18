@@ -126,7 +126,7 @@ def unix_time_ms_to_datetime( time_msec ):
                 time_dt = np.array(dtm.datetime(1970, 1, 1) + dtm.timedelta(microseconds=1000. * time_msec[0]))
             else:
                 # It is an array of len 1. Return and array of 1
-                time_dt = np.array(dtm.datetime(1970, 1, 1) + dtm.timedelta(microseconds=1000. * time_msec))
+                time_dt = np.array([dtm.datetime(1970, 1, 1) + dtm.timedelta(microseconds=1000. * time_msec[0])])
         else:
             # It is a list, array or masked array with more than 1 value
             # This checks to see if it is a masked array
