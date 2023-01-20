@@ -46,7 +46,7 @@ jobs:
             #pip install $line
           #done
           
-          cp /src/irbempy.py /opt/hostedtoolcache/Python/3.9.16/x64/lib/python3.9/site-packages/spacepy/irbempy/
+          cp src/irbempy.py /opt/hostedtoolcache/Python/3.9.16/x64/lib/python3.9/site-packages/spacepy/irbempy/
           
       # Runs a single command using the runners shell
       - name: Run a one-line script
