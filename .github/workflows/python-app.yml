@@ -38,7 +38,7 @@ jobs:
           
           #if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           
-          grep -v '^#' requirements.txt | xargs pip install
+          grep -v '^#' requirements.txt | xargs -n 1 -L 1 pip install
           
           cp src/irbempy.py /opt/hostedtoolcache/Python/3.9.16/x64/lib/python3.9/site-packages/spacepy/irbempy/
           
