@@ -22,7 +22,7 @@ from json import encoder
 #encoder.FLOAT_REPR = lambda o: format(o, '.5f')
 #from sklearn.externals.joblib import load
 from joblib import load
-import keras
+#import keras
 from spacepy import coordinates as coord
 from spacepy import time
 from spacepy.irbempy import get_Lstar
