@@ -37,10 +37,11 @@ jobs:
           # pip makes no promises to install the packages in the order they are declared in the requirements file
           # *** if [ -f requirements.txt ]; then pip install -r requirements.txt; fi ***
           
-          # The workaround is to read from the requirements file line by line and run the pip install command on it. 
-          #grep -v '^#' requirements.txt | xargs -n 1 -L 1 pip install
-          #cat requirements.txt | xargs pip install
-          
+          # The workaround is to run the pip install command while reading the requirements file line by line. 
+          # Either of the scripts listed below yields the desired outcome.
+          # 1)
+          # grep -v '^#' requirements.txt | xargs -n 1 -L 1 pip install
+          # 2)
           for line in $(cat requirements.txt)
           do
             pip install $line
