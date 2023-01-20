@@ -1,6 +1,6 @@
 # This is a basic workflow to help you get started with Actions
 
-name: Python script (branch)
+name: CI script
 
 # Controls when the workflow will run
 on:
@@ -36,7 +36,9 @@ jobs:
           
           python -m pip install --upgrade pip
           
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          #if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          
+          grep -v '^#' requirements.txt | xargs pip install
           
           cp src/irbempy.py /opt/hostedtoolcache/Python/3.9.16/x64/lib/python3.9/site-packages/spacepy/irbempy/
           
