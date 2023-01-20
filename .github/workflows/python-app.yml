@@ -39,7 +39,7 @@ jobs:
           
           # The workaround is to read from the requirements file line by line and run the pip install command on it. 
           #grep -v '^#' requirements.txt | xargs -n 1 -L 1 pip install
-          #cat requirements.txt | xargs pip install
+          cat requirements.txt | xargs pip install
           
           #for line in $(cat requirements.txt)
           #do
