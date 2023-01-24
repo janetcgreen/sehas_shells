@@ -52,6 +52,7 @@ jobs:
       # Runs a single command using the runners shell
       - name: Run a one-line script
         run: |
-          export PYTHONPATH=src
+          export PYTHONPATH=tests:${PYTHONPATH}
+          export PYTHONPATH=src:${PYTHONPATH}
           
           python tests/test_process_SHELLS_inputs.py
