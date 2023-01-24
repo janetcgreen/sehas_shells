@@ -54,7 +54,5 @@ jobs:
         run: |
           export PYTHONPATH=src
           echo ${PYTHONPATH}
-          export PYTHONPATH=tests:${PYTHONPATH}
-          echo ${PYTHONPATH}
           
           python tests/test_process_SHELLS_inputs.py
