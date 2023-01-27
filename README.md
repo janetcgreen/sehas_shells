@@ -8,8 +8,7 @@ LFS handles large files (.nc files) by storing references to the file in the rep
 
 [Mac - Apple Silicon](https://github.com/git-lfs/git-lfs/releases/download/v3.3.0/git-lfs-darwin-arm64-v3.3.0.zip)
 
-```bash
-cd ~/Downloads/git-lfs-3.3.0
+```bash0
 sudo ./install.sh
 ```
 
