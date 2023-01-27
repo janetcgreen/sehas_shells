@@ -8,9 +8,14 @@ LFS handles large files (.nc files) by storing references to the file in the rep
 
 [Mac - Apple Silicon](https://github.com/git-lfs/git-lfs/releases/download/v3.3.0/git-lfs-darwin-arm64-v3.3.0.zip)
 
-Homebrew: ```bash brew install git-lfs ```
+```bash
+cd ~/Downloads/git-lfs-3.3.0
+sudo ./install.sh
+```
 
-MacPorts: ```bash port install git-lfs ```
+Homebrew: ```bash brew install git-lfs```
+
+MacPorts: ```bash port install git-lfs```
 
 Once downloaded and installed, set up Git LFS for your user account by running:
 
