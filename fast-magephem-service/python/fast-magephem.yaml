@@ -1,0 +1,320 @@
+openapi: 3.0.3
+info:
+  title: Fast Magnetic Ephemeris Service
+  description: Service to provide magnetic coordinates at user-specified times and locations
+  # termsOfService: https://fast-magephem.dev.e3.aero.org/docs
+  contact:
+    email: paul.obrien@aero.org
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  version: 0.0.0
+externalDocs:
+  description: not populated yet
+  url: https://fast-magephem.dev.e3.aero.org/docs
+servers:
+  - url: https://fast-magephem.dev.e3.aero.org:23761/api
+tags:
+  - name: coord_trans
+    description: translate coordinates from one 3-D frame to another
+  - name: magephem
+    description: compute magnetic coordinates at specified time/location
+paths:
+  /coord_trans:
+    post:
+      tags:
+        - coord_trans
+      summary: Translate from one 3-D frame to another
+      description: |
+        Translate from one 3-D coordinate system to another.<br>
+        Supports GDZ, GEO, GSM, GSE, SM, GEI, MAG, SPH.<br>
+        Provide input system (fromSys) and list of dates (dates), 
+          list of 3-D locations (xIN), and requested output system (outSys).<br>
+        Returns same list of dates (dates) and list of 3-D locations (xOUT) in output system.<br>
+        dates and xIN lists must have same length. xOUT will have that length as well.<br>
+        - GDZ - geodetic as alt (km), latitude (deg), longitude (deg).
+        - GEO - Cartesian geographic (RE).
+        - GSM - Cartesian geocentric solar magnetospheric (RE).
+        - SM - Cartesian solar magnetospheric (RE).
+        - GEI - Cartesian geocentric Earth inertical (RE).
+        - MAG - Cartesian magnetic.
+        - SPH - Spherical geographic coordinates as radius (RE), latitude (deg), longitude (deg).
+        
+        uses POST protocol in JSON format, responds in JSON.
+      operationId: coord_trans
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ fromSys, toSys, dates, xIN ]
+              properties:
+                fromSys:
+                  allOf:
+                    - $ref: '#/components/schemas/CoordinateSystem'
+                  description: starting (input) coordinate system
+                  example: 'GDZ'
+                toSys:
+                  allOf:
+                    - $ref: '#/components/schemas/CoordinateSystem'
+                  description: ending (output) coordinate system
+                  example: 'GEO'
+                dates:
+                  allOf:
+                    - $ref: '#/components/schemas/DateList'
+                  description: "list of dates in YYYY-MM-DDTHH:MM:SS.mmm(uuu)Z format"
+                  example: ["2020-12-31T12:59:49.0Z","2020-12-31T12:59:59.0Z"]
+                xIN:
+                  allOf:
+                    - $ref: '#/components/schemas/CoordinateList3D'
+                  description: "list of input 3-D coordinate sets in fromSys (nested list)"
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dates:
+                    allOf:
+                      - $ref: '#/components/schemas/DateList'
+                    description: "list of dates in YYYY-MM-DDTHH:MM:SS.mmm(uuu)Z format (echoed from input)"
+                  xOUT:
+                    allOf:
+                      - $ref: '#/components/schemas/CoordinateList3D'
+                    description: "list of 3-D coordinate sets in toSys (nested list)"
+        '405':
+          description: Invalid input
+  /magephem:
+    post:
+      tags:
+        - magephem
+      summary: Translate from one 3-D frame to another
+      description: |
+        compute magnetic ephemeris / coordinates for a list of times and locations<br>
+        
+        Inputs:<br>
+          - dates - list of dates in YYYY-MM-DDTHH:MM:SS.fffuuuZ format (variable precision)
+          - X - list of 3-D locations
+          - sys - coordinate system for X
+            + Supports GDZ, GEO, GSM, GSE, SM, GEI, MAG, SPH.
+            + GDZ - geodetic as alt (km), latitude (deg), longitude (deg).
+            + GEO - Cartesian geographic (RE).
+            + GSM - Cartesian geocentric solar magnetospheric (RE).
+            + SM - Cartesian solar magnetospheric (RE).
+            + GEI - Cartesian geocentric Earth inertical (RE).
+            + MAG - Cartesian magnetic.
+            + SPH - Spherical geographic coordinates as radius (RE), latitude (deg), longitude (deg).
+          - alpha - local pitch angle scalar, or 1-D list of constant angles, or 2-D list of variable angles
+            2-D list would be time x direction
+          - dirs - list of 3-D GEI coordates for each time, or list of multiple 3-D coordinates for each time
+            time x 3, or time x direciton x 3
+          - kext - external field model 'opq' or 'igrf' (=none)
+          - outputs - list of coordinates to output (I,Bm,K,Phi,hmin,L,Blocal,MLT,Bmin,BminX,BminY,BminZ)<br>
+        At most one of alpha, dirs is allowed. if neither alpha or dirs is provided, assumes alpha=90
+        
+        
+        Outputs (dictionary of arrays):<br>
+          (if alpha is a scalar, then "list of scalars" means angle-dependent quantities are provide
+          only at the single requested alpha for each time. If alpha is a list, then "list of lists" means 
+          a nested list of shape time by direction)
+          - dates - list of input dates
+          - I - integral invariant RE, list of scalars or list of lists
+          - Bm - mirror magnetic field strength, nT, list of scalars or list of lists
+          - K - Kaufmann's K modified second invariant, RE*sqrt(G), list of scalars or list of lists
+          - Phi - third invariant, G*RE^2, list of scalars or list of lists
+          - hmin - minimum altitude along drift-bounce orbit, km, list of scalars or list of lists
+          - L - McIlwain's L, RE, list of scalars or list of lists
+          - Blocal - local magnetic field strength, nT, list
+          - MLT - equatorial magnetic local time, nT, list
+          - Bmin - equatorial (minimum) magnetic field strength, nT, list
+          - BminX,BminY,BminZ - GEO coordinates of equatorial crossing, RE, list
+        uses POST protocol in JSON format, responds in JSON.
+      operationId: magephem
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ dates, sys, kext, outputs]
+              properties:
+                dates:
+                  allOf:
+                    - $ref: '#/components/schemas/DateList'
+                  description: "list of dates in YYYY-MM-DDTHH:MM:SS.mmm(uuu)Z format"
+                  example: ["2020-12-31T12:59:49.0Z","2020-12-31T12:59:59.0Z"]
+                X:
+                  allOf:
+                    - $ref: '#/components/schemas/CoordinateList3D'
+                  description: "list of input 3-D coordinate sets (nested list)"
+                sys:
+                  allOf:
+                    - $ref: '#/components/schemas/CoordinateSystem'
+                  description: coordinate system
+                kext:
+                  type: string
+                  example: opq
+                  enum: [ opq, igrf ]
+                  description: external magnetic field model
+                alpha:
+                  oneOf:
+                    - allOf:
+                        - $ref: '#/components/schemas/PitchAngle'
+                      description: scalar input pitch angle
+                    - type: array
+                      example: [10.0,45.0,90.0]
+                      items:
+                        oneOf:
+                          - $ref: '#/components/schemas/PitchAngle'
+                          - type: array
+                            items:
+                              $ref: '#/components/schemas/PitchAngle'
+                      description: "list of input pitch angles"
+                dirs:
+                  oneOf:
+                    - allOf:
+                        - $ref: '#/components/schemas/CoordinateList3D'
+                      description: "list of input 3-D coordinate sets (nested list)"
+                    - type: array
+                      items:
+                        $ref: '#/components/schemas/CoordinateList3D'
+                      description: "list of lists of input 3-D coordinate sets (nested nested list)"
+                outputs:
+                    type: array
+                    items:
+                        type: string
+                        example: L
+                        enum: [I, Bm, K, Phi, hmin, L, Blocal, MLT, Bmin, BminX, BminY, BminZ]
+                    example: [I, Bm, L]
+                    description: list of coordinates to output
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [dates]
+                properties:
+                  dates:
+                    allOf:
+                      - $ref: '#/components/schemas/DateList'
+                    description: "list of dates in YYYY-MM-DDTHH:MM:SS.mmm(uuu)Z format (echoed from input)"
+                  I:
+                    allOf:
+                      - $ref: '#/components/schemas/ListOfFloatOrLists'
+                    description:  "I - integral invariant RE, list of scalars or list of lists"
+                    example: [0.0,3.0,10.0]
+                  Bm:
+                    allOf:
+                      - $ref: '#/components/schemas/ListOfFloatOrLists'
+                    description:  "mirror magnetic field strength, nT, list of scalars or list of lists"
+                    example: [100.0,300.0,500.0]
+                  K:
+                    allOf:
+                      - $ref: '#/components/schemas/ListOfFloatOrLists'
+                    description:  "Kaufmann's K modified second invariant, RE*sqrt(G), list of scalars or list of lists"
+                    example: [0.0,2.0,5.0]
+                  Phi:
+                    allOf:
+                      - $ref: '#/components/schemas/ListOfFloatOrLists'
+                    description:  "third invariant, G*RE^2, list of scalars or list of lists"
+                    example: [1.0,1.9,3.0]
+                  hmin:
+                    allOf:
+                      - $ref: '#/components/schemas/ListOfFloatOrLists'
+                    description:  "minimum altitude along drift-bounce orbit, km, list of scalars or list of lists"
+                    example: [100.0,200.0,300.0]
+                  L:
+                    allOf:
+                      - $ref: '#/components/schemas/ListOfFloatOrLists'
+                    description:  "McIlwain's L, RE, list of scalars or list of lists"
+                    example: [4.5,4.6,4.7]
+                  Blocal:
+                    type: array
+                    items: 
+                      type: number
+                      default: -1.0E+30
+                      example: 100.0
+                    description:  "local magnetic field strength, nT, list"
+                  MLT:
+                    type: array
+                    items: 
+                      type: number
+                      default: -1.0E+30
+                      example: 12.0
+                    description:  "equatorial magnetic local time, nT, list"
+                  Bmin:
+                    type: array
+                    items: 
+                      type: number
+                      default: -1.0E+30
+                      example: 100.0
+                    description:  "equatorial (minimum) magnetic field strength, nT, list"
+                  BminX:
+                    type: array
+                    items: 
+                      type: number
+                      default: -1.0E+30
+                      example: 2.5
+                    description:  "GEO X coordinate of equatorial crossing, RE, list"
+                  BminY:
+                    type: array
+                    items: 
+                      type: number
+                      default: -1.0E+30
+                      example: 2.5
+                    description:  "GEO Y coordinate of equatorial crossing, RE, list"
+                  BminZ:
+                    type: array
+                    items: 
+                      type: number
+                      default: -1.0E+30
+                      example: 2.5
+                    description:  "GEO Z coordinate of equatorial crossing, RE, list"
+
+        '405':
+          description: Invalid input
+components:
+  schemas:
+    CoordinateSystem:
+      # supply "description" via {allOf : [ $ref : #/components/schemas/CoordinateSystem],description:...}
+      type: string
+      example: GDZ
+      enum: [ GDZ , GEO, GSM, GSE, SM, GEI, MAG, SPH ]
+    DateList:
+      # supply "description" via {allOf : [ $ref : #/components/schemas/DateList],description:...}
+      type: array
+      items:
+        type: string
+        format: date-time
+        example: "2020-12-31T12:59:59.0Z"
+    CoordinateList3D:
+      # supply "description" via {allOf : [ $ref : #/components/schemas/CoordinateList3D],description:...}
+      type: array
+      example: [[ 100.0, 45.0, -73.0],[ 100.1, 45.2, -73.5]]
+      items:
+        type: array
+        items:
+          format: number
+          minLength: 3
+          maxLength: 3
+          example: 100.0
+    PitchAngle:
+      type: number
+      minimum: 0
+      maximum: 180
+      example: 45.0
+    ListOfFloatOrLists:
+      type: array
+      items:
+        oneOf:
+          - type: number
+            default: -1.0E+30
+          - type: array
+            items:
+              type: number
+              default: -1.0E+30
+         
+    
