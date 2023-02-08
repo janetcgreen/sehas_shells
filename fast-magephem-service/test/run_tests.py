@@ -85,7 +85,7 @@ def recursive_equals(a,b,path='/'):
                 return False
             if (not np.isscalar(a)) or not np.isscalar(b):
                 return False
-            if (base == float) and np.isnan(a) and np.isnan(b):
+            if (base == float) and np.isclose(a,b,equal_nan=True):
                 return True
             if a == b:
                 return True
@@ -160,3 +160,4 @@ if __name__ == '__main__':
             # there was a failure. Report
             print('RESULT:FAIL %s, %s' % (name,str(e)))
             print(traceback.format_exc()) # print detailed failure
+            print(data['outputs'],outputs)
