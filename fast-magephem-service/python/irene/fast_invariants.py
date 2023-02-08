@@ -126,9 +126,6 @@ def _run_nn(mjd,partials,info):
     info is a structure read in by mat2struct, e.g., from fast_hmin_net.mat
      it holds the fast neural network and its metadata
     """
-    #Yvars.log10Phi3.Xvars = {'root4J','Bmirror','mjd','YearPhase','ut'};
-    # Xvars.root4J = J.^0.25; (J = I, in Re)
-    # Xvars.Bmirror = log10(Bmirror); B in nT
     from datetime import datetime
 
     (Nt,Nalpha) = partials.I.shape
@@ -142,20 +139,26 @@ def _run_nn(mjd,partials,info):
     UT = np.remainder(mjd,1.0) # day fraction
     mjdref = datetime2mjd(np.array([datetime(1950,1,1)]))
     YearPhase = np.remainder(mjd-mjdref,365.25) # like DOY but starts at 0 and close to sidereal year
-    # X = [root4J(:), log10Bm(:), repmat([mjd(:),YearPhase(:),UT(:)],Nalpha,1)];
-    X = np.zeros((root4J.size,9),dtype=float)
-    X[:,0] = root4J.ravel(order='F') # Fortran (Matlab) ordering
-    X[:,1] = log10Bm.ravel(order='F')  # Fortran (Matlab) ordering
+    # allX rows are time, cols are variables
+    allX = np.zeros((root4J.size,9),dtype=float)
+    allX[:,0] = root4J.ravel(order='F') # Fortran (Matlab) ordering
+    allX[:,1] = log10Bm.ravel(order='F')  # Fortran (Matlab) ordering
     # these repeats imply Fortran (Matlab) ordering for mapping from row of X to row,col of Y
     duplicate = lambda x : np.repeat(x.reshape(1,Nt),Nalpha,axis=0).ravel()
-    X[:,2] = duplicate(mjd)
-    X[:,3] = duplicate(YearPhase)
-    X[:,4] = duplicate(UT)
-    X[:,5] = np.cos(YearPhase*2*np.pi/365.25)
-    X[:,6] = np.sin(YearPhase*2*np.pi/365.25)
-    X[:,7] = np.cos(UT*2*np.pi)
-    X[:,8] = np.sin(UT*2*np.pi)
-    X = X[:,info.iXcols] # select inputs appropriate for this NeuralNet
+    allX[:,2] = duplicate(mjd)
+    allX[:,3] = duplicate(YearPhase)
+    allX[:,4] = duplicate(UT)
+    allX[:,5] = duplicate(np.cos(YearPhase*2*np.pi/365.25))
+    allX[:,6] = duplicate(np.sin(YearPhase*2*np.pi/365.25))
+    allX[:,7] = duplicate(np.cos(UT*2*np.pi))
+    allX[:,8] = duplicate(np.sin(UT*2*np.pi))
+    X = []
+    allX_keys = ['root4I','log10Bm','mjd','YearPhase','UT','cosYP','sinYP','cosUT','sinUT']
+    for key in info.inputs:
+        if key not in allX_keys:
+            raise Exception('Neural Network input %s unknown' % key)
+        X.append(allX[:,allX_keys.index(key)])
+    X = np.column_stack(X)
 
     maxBmirror = np.polyval(info.Pmax_log10B,root4J)
     # check whether Bm is too high for the specified value of I
@@ -194,15 +197,13 @@ def _fast_invariants_core(coord,kext,sysaxes,dates,x1,x2,x3,alpha,partials=None,
             assert (Kp>=0) and (Kp<9.5), 'Kp out of range %s' % str(Kp)
             iKp = min(int(Kp),6)
             basefile = '%s_Kp%d' % (kext,iKp)
-        print('basefile',basefile,'kext',kext,'coord',coord)
         file = os.path.join(_NN_path,basefile+'.mat')
         
         info = mat2struct(file,root_uep='/net') # load data into struct
-        print('info',info().keys())
         info.net = NeuralNet(info) # use struct to initialize NeuralNet
-        print('info.net',info.net)
-        if 'iXcols' not in info:
-            info.iXcols = np.arange(5,dtype=int) # old X's: root4J, log10Bm, mjd, YearPhase, UT
+        if 'inputs' not in info:
+            info.inputs = 'root4I,log10Bm,mjd,YearPhase,UT'
+        info.inputs = info.inputs.replace(' ','').split(',')
         _NNs[kext][coord] = info
 
     if partials is None:

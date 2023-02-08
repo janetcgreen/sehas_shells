@@ -56,7 +56,7 @@ class NeuralNet(object):
         Y is Nt x Ny - ndarray of real
         """
 
-        assert (X.shape)[1] == self._Nx, "X must be N x Nx(=%d" % self._Nx
+        assert X.shape[1] == self._Nx, "X must be N x Nx (2nd dim is %d, should be %d)" % (X.shape[1],self._Nx)
 
         # equation 3:
         Z = (X-self._xbar)/self._sx
