@@ -32,10 +32,12 @@ class test_process_shells_inputs(unittest.TestCase):
 
         # ---------------------- Define some tables in configfile---------------------
 
+        self.test_dir = tempfile.mkdtemp()
         self.cdict,self.dbase_type = swu.read_config(self.configfile,'DEFAULT')
-        # The test config just has the name of the dbase
-        # and the tables, no password
-        self.conn = sl.connect(self.cdict['dbase']) # Create a dbase called sehas_shells
+        # The DEFAULT test config has the name of the sqlite dbase
+        # and the table names, no password
+        # First need to delete the test dbase if it exists
+        self.conn = sl.connect(os.path.join(self.test_dir,self.cdict['dbase'])) # Create a dbase called sehas_shells
         cursor = self.conn.cursor()
         # ----------------------- Create tables ------------------
         tables = self.get_shells_tables()  # return a dict with the table definitions
@@ -48,9 +50,8 @@ class test_process_shells_inputs(unittest.TestCase):
                 print(err)
             else:
                 print("OK")
-        print("*** TEST SETUP: Done with tables")
 
-        self.test_dir = tempfile.mkdtemp()
+        print("*** TEST SETUP: Done with tables")
 
     def tearDown(self):
         # ------------------------------------------------
@@ -91,14 +92,34 @@ class test_process_shells_inputs(unittest.TestCase):
         #    "  PRIMARY KEY (`id`)"
         #    ") ")
 
-        # The input table will have the time, channelId, LId, satId, lat, lon, NS, and eflux
-        tables['ShellsInputsTbl'] = (
-            "CREATE TABLE ShellsInputsTbl ("
-            "  unixTime_utc int NOT NULL,"
-            "  channelId int NOT NULL,"
-            "  LId int NOT NULL,"
-            "  satId int NOT NULL,"
-            "  eflux double DEFAULT NULL)")
+        # The input table will have the same structure as the csv/json files
+        # time, e1 L1, e1 L2, ...e2 L1, e2 L2, ... Kp, Kpmax, satId
+        tables['ShellsInputsTbl'] = ("CREATE TABLE ShellsInputsTbl ("
+            "  time int NOT NULL,")
+        channels = ["mep_ele_tel90_flux_e1","mep_ele_tel90_flux_e2","mep_ele_tel90_flux_e3","mep_ele_tel90_flux_e4"]
+        Lbins = np.arange(1, 8.25, .25)
+        for channel in channels:
+            for L in Lbins:
+                colname = '"'+channel+'_L_'+str(L)+'"'
+                tables['ShellsInputsTbl']= tables['ShellsInputsTbl']+' '+colname+' double DEFAULT NULL,'
+
+        tables['ShellsInputsTbl'] = tables['ShellsInputsTbl']+'  "Kp*10" int DEFAULT NULL, ' \
+                       "Kp_max double DEFAULT NULL, satId int NOT NULL,"\
+                        "  PRIMARY KEY (time)" \
+                         ") "
+        # "  FOREIGN KEY (channelId) REFERENCES ShellsChannelTbl(id),"
+        # "  FOREIGN KEY (SatId) REFERENCES ShellsSatTbl(id)"
+        # ") ENGINE=InnoDB")
+            #"  e1_L1 int NOT NULL,"
+            #"  e1_L2 int NOT NULL,"
+            #"  e1_L3 int NOT NULL,"
+            #"  e1_L4 int NOT NULL,"
+            #"  e1_L5 int NOT NULL,"
+            #"  e1_L6 int NOT NULL,"
+            #"  e1_L7 int NOT NULL,"
+            #"  e1_L8 int NOT NULL,"
+            #"  satId int NOT NULL,"
+            #"  eflux double DEFAULT NULL)")
 
             #"  PRIMARY KEY (unixTime_utc, channelId, LId),"
             #"  FOREIGN KEY (channelId) REFERENCES ShellsChannelTbl(id),"
@@ -107,16 +128,8 @@ class test_process_shells_inputs(unittest.TestCase):
 
         return tables
 
-    def test_B_check_test_dbase_conn(self):
-        #===============================================================
-        # TEST: Check that test sqlite dbase connection works
-        #==============================================================
-        print('*** TEST: Check that test sqlite dbase connection works')
-        conn = pr.connectToDb(self.cdict)
-        self.assertTrue(conn is not None)
-        conn.close()
 
-    def test_B_check_test_start_date(self):
+    def test_A_check_test_start_date(self):
         #===============================================================
         # TEST: Check that test sqlite real time mode returns a valid start date
         #==============================================================
@@ -131,7 +144,8 @@ class test_process_shells_inputs(unittest.TestCase):
         # In this case no data is entered yet so it should return todays
         # date at 0:0:0
         sat = 'n15'
-        sdate = pr.get_start_rt(self.cdict, sat)
+        outdir = self.test_dir
+        sdate = pr.get_start_rt(outdir, self.cdict, sat)
 
         self.assertEqual(sdate, dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0))
 
@@ -165,6 +179,78 @@ class test_process_shells_inputs(unittest.TestCase):
         sdate = satclass.sdate()
         self.assertEqual(sdate,dt.datetime(2001,1,10,0,0))
 
+    def test_B_run_shells_reprocess_sqlite(self):
+        #==================================================================
+        # TEST: Check that data is created as nc file with no config
+        #==================================================================
+        # Arguments here are sdate,edate,
+        # realtime,neural,localdir,outdir,cdfdir
+        # noaasite,sat,
+        # vars,channels
+        # model,modeldir,logfile,config, csection
+        #
+
+        print('*** TEST: Check that data is created as nc file with no config')
+
+        outdir = self.test_dir
+
+        # Run the code that should create a dbase data for 2022/1/1
+        pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
+                          False, False, None, outdir, './SHELLS/cdf/',
+                          "www.ncei.noaa.gov", ["n15"],
+                          ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
+                                'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
+                                'mep_ele_tel90_flux_e4'],
+                          ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
+                                    'mep_ele_tel90_flux_e4'],
+                          None, None,os.path.join(outdir,'test_process_shells_'),
+                          None,None)
+        print('Here')
+
+    def test_B_run_shells_reprocess_sqlite(self):
+        #==================================================================
+        # TEST: Check that data is added to dbase in reprocessing
+        #==================================================================
+        # Arguments here are sdate,edate,
+        # realtime,neural,localdir,outdir,cdfdir
+        # noaasite,sat,
+        # vars,channels
+        # model,modeldir,logfile,config, csection
+        #
+        # The configfile has
+        # input_type = sqlite
+        # dbase = sehas_shells
+        # inputstbl = ShellsInputsTbl
+        # output_type = csv
+        # fname = shells_inputs
+        # This should create a file called shells_inputs_20220101HHMMSS.csv
+        print('*** TEST:Check sqlite data added when running in reprocessing mode')
+
+        cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_SQLITE')
+        outdir = self.test_dir
+
+        # Run the code that should create a dbase data for 2022/1/1
+        pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
+                          False, False, None, outdir, './SHELLS/cdf/',
+                          "www.ncei.noaa.gov", ["n15"],
+                          ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
+                                'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
+                                'mep_ele_tel90_flux_e4'],
+                          ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
+                                    'mep_ele_tel90_flux_e4'],
+                          None, None,os.path.join(outdir,'test_process_shells_'),
+                          self.configfile,'SHELLS_TESTING_SQLITE')
+        # Open the dbase and check that there is data
+        conn = swu.create_conn_sqlite(os.path.join(outdir, cdict['dbase']))
+        cursor = conn.cursor()
+        query = 'SELECT * FROM '+cdict['tblname']
+        cursor.execute(query,)
+        rows = cursor.fetchall()
+        test = 0
+        if len(rows)>50:
+            test=1
+        self.assertEqual(test,1)
+
     def test_B_run_shells_reprocess_csv(self):
         #==================================================================
         # TEST: Check csv file creation when running in reprocessing mode
@@ -194,7 +280,7 @@ class test_process_shells_inputs(unittest.TestCase):
         # Run the code that should create a csv file for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, self.test_dir, './SHELLS/cdf/',
-                          "satdat.ngdc.noaa.gov", ["n15"],
+                          "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                 'mep_ele_tel90_flux_e4'],
@@ -249,7 +335,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, self.test_dir, './SHELLS/cdf/',
-                          "satdat.ngdc.noaa.gov", ["n15"],
+                          "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                 'mep_ele_tel90_flux_e4'],
@@ -303,7 +389,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, self.test_dir, './SHELLS/cdf/',
-                          "satdat.ngdc.noaa.gov", ["n15"],
+                          "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                                 'mep_ele_tel90_flux_e4'],
@@ -373,7 +459,7 @@ class test_process_shells_inputs(unittest.TestCase):
         testdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
         self.assertEqual(sdate, testdate)
 
-    def test_A_run_shells_csv_realtime_update(self):
+    def test_B_run_shells_csv_realtime_update(self):
         #==================================================
         # TEST: Check that a csv file updates in real time mode
         #==================================================
@@ -389,7 +475,7 @@ class test_process_shells_inputs(unittest.TestCase):
         # This should add a file for the day before
         pr.process_SHELLS(sdate, sdate,
                           False, False, None, outdir, './SHELLS/cdf/',
-                          "satdat.ngdc.noaa.gov", ["n15"],
+                          "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                            'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                            'mep_ele_tel90_flux_e4'],
@@ -410,7 +496,7 @@ class test_process_shells_inputs(unittest.TestCase):
         # Then try to update in rt
         pr.process_SHELLS(None, None,
                           True, False, None, self.test_dir, './SHELLS/cdf/',
-                          "satdat.ngdc.noaa.gov", ["n15"],
+                          "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                            'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
                            'mep_ele_tel90_flux_e4'],
