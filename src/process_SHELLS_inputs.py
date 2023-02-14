@@ -24,7 +24,7 @@ import calendar
 #from spacepy.irbempy import get_Lstar
 #import spacepy as sp
 
-sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
 import shells_web_utils as swu
 
