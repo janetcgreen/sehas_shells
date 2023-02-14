@@ -22,13 +22,15 @@ from json import encoder
 #encoder.FLOAT_REPR = lambda o: format(o, '.5f')
 #from sklearn.externals.joblib import load
 from joblib import load
-#import keras
+import keras
 from spacepy import coordinates as coord
 from spacepy import time
 from spacepy.irbempy import get_Lstar
 import spacepy as sp
+import sqlite3 as sl
 #sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
+from scipy.interpolate import NearestNDInterpolator
 #import data_utils as du
 #import time as ti
 
@@ -37,6 +39,12 @@ logger = logging.getLogger(__name__)
 
 # To override the default severity of logging
 logger.setLevel('INFO')
+
+#def my_handler(type, value, tb):
+#    logger.exception("Uncaught exception: {0}".format(str(value)))
+
+# Install exception handler
+#sys.excepthook = my_handler
 
 
 def read_config(configfile,section):
@@ -102,6 +110,34 @@ def checkKey(testdict, keys):
             print(msg)
             raise Exception(msg)
     return
+
+def create_conn_sqlite(db_file):
+    """ create a database connection to the SQLite database
+        specified by db_file
+    :param db_file: database file
+    :return: Connection object or None
+    """
+    conn = None
+    try:
+        conn = sl.connect(db_file)
+    except Exception as e:
+        logger.error(e)
+
+    return conn
+
+def create_mysql_conn(cdict):
+    try:
+        conn = mysql.connector.connect(user=cdict['dbuser'],
+                                  password=cdict['dbpass'],
+                                  host=cdict['dbhost'],
+                                  )
+        logger.info("Connection to database successful.")
+
+
+    except Exception as e:
+        logger.error(e)
+
+    return conn
 
 class poes_sat_sem2:
     # PURPOSE to hold the info for all the poes sem2
@@ -236,6 +272,8 @@ def make_Lbin_data(data, Lbins=np.arange(1,8.5,.25), Lcol = 'L_IGRF', vars = Non
 
     for ch in vars:
         data[ch][data[ch]<0]=np.nan
+    # e4 often has negative values in the SAA because the proton flux is high
+    # so the data is not a good electron channel anymore
     #    chindex = vtemp.index(ch)
     #    tmask[ chindex, np.where(npdata[chindex,:] < 0)] = 1
         
@@ -293,16 +331,24 @@ def make_Lbin_data(data, Lbins=np.arange(1,8.5,.25), Lcol = 'L_IGRF', vars = Non
     # Define a single time for each pass
     #-------------------------------------
     # I was doing nanmedian but changed it to nanmin
-    time_med = np.nanmin(bindat.statistic[0, :, :], axis=1)
+    # Not sure why I changed this from nanmed to nan min
+    # I'll try changing it back
+    #time_med = np.nanmin(bindat.statistic[0, :, :], axis=1)
+    time_med = np.nanmedian(bindat.statistic[0, :, :], axis=1)
 
     # Make sure the last pass has some valid data
     # It could be all nans if the last pass is only partial and all greater than L=8
     # Or there could be some weird times because the L passes get screwed up
     tinds = np.where(~np.isnan(time_med))[0]
 
-    # Make the return dict
+    # Make the return dict with the good tinds
     for vind in range(0,len(bvars)):
         findat[bvars[vind]] = bindat.statistic[vind,tinds,:]
+
+    # JGREEN: 2/2023 Added this to fill in gaps where the e4 flux is negative
+    # Try doing a 2-D interpolation
+    for ch in vars:
+        pass
 
     findat['time_pass'] = time_med[tinds]
 
@@ -444,6 +490,39 @@ def map_poes(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_ey
     eyear_all = year
     syear_all = eyear_all-4
 
+    #JGREEN: 02/2023 I took these calculations out of the
+    # loop through the energy channels because they will be
+    # the independent of that
+
+    # Get the hemisphere
+    # JGREEN: data['lat'] was being overwritten for every channel
+    # so that hemi was just 0. this didn't happen in previous
+    # versions because data['lat'] was a netcdf variable
+    hemi = np.copy(data['lat'][:])
+    hemi[hemi >= 0] = 0  # Northern hemi
+    hemi[hemi < 0] = 1  # Southern hemi
+    hemi1 = hemi.astype(int)
+
+    # Get the NS direction
+    NSco = data['NS'][:]
+    NSco1 = NSco.astype(int)
+
+    # Get the lon bin
+    lon = np.floor(data['lon'][:] / 10)
+    lon1 = lon.astype(int)
+    lon1[lon1 > 35] = 0  # If its exactly 360 deg it gets put in bin 0
+
+    Kp = np.floor(data['Kp*10'][:] / 10)
+    Kp1 = Kp.astype(int)
+    # Need to make Kp into a vector
+    Kpvec = np.tile(Kp1, (len(Lbins), 1)).T
+
+    # Need to make an array of Ls
+    Ls = np.zeros((len(data['time_pass'][:]), len(Lbins)), dtype=int)
+
+    for lco in range(0, len(Lbins)):
+        Ls[:, lco] = Ls[:, lco] + lco
+
     # The mapping tables are stored separately for each variable and sat
     # So step through each variable to do mapping
     for eco in range(0, len(evars)):
@@ -477,6 +556,7 @@ def map_poes(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_ey
         srefile = os.path.join(cdf_dir, satref,'poes_cdf_' + satref + '_' + str(ref_syear).zfill(4) + '_' \
                   + str(ref_eyear).zfill(4) + evars[eco] + '.nc')
         sar_ref = nc4.Dataset(srefile, 'r')
+        print(srefile)
 
         # This is the percentile for each flux for the sat being processed and the current column
         # It uses evars which are the electron flux cols
@@ -488,41 +568,16 @@ def map_poes(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_ey
         
         # Get the flux bins for the data being processed
         # data is stored as data[pass,Lbin] for each variables
-
         # Todo Sometimes the flux is a nan and then it can't round
         fluxbin = np.round(np.log10(data[evars[eco]][:]) * 10)
         fluxbin1 = fluxbin.astype(int)
 
-        # Get the hemisphere
-        hemi = data['lat'][:]
-        hemi[hemi >= 0] = 0  # Northern hemi
-        hemi[hemi < 0] = 1  # Southern hemi
-        hemi1 = hemi.astype(int)
-
-        # Get the NS direction
-        NSco = data['NS'][:]
-        NSco1 = NSco.astype(int)
-
-        # Get the lon bin
-        lon = np.floor(data['lon'][:] / 10)
-        lon1 = lon.astype(int)
-        lon1[lon1 > 35] = 0 # If its exactly 360 deg it gets put in bin 0
-
-        Kp = np.floor(data['Kp*10'][:] / 10)
-        Kp1 = Kp.astype(int)
-        # Need to make Kp into a vector
-        Kpvec = np.tile(Kp1, (len(Lbins), 1)).T
-        
-        # Need to make an array of Ls
-        Ls = np.zeros((len(data['time_pass'][:]), len(Lbins)), dtype=int)
-
-        for lco in range(0, len(Lbins)):
-            Ls[:, lco] = Ls[:, lco] + lco
-        
         # This is bad data
+        # This happens because the sat doesn't go out to large Ls sometime
+        # so you can't fill in values with statistics
         nan_inds = np.where((fluxbin1 < -10) | (hemi1 < -10) | (lon1 < -10) | (Kpvec < -10) | (NSco1 < -10))
 
-        # Set these to zero for now so that it is a valid index
+        # Set these nan_inds to zero for now so that it is a valid index
         # but flag it later
         fluxbin1[nan_inds] = 0
         hemi1[nan_inds] = 0
@@ -534,9 +589,9 @@ def map_poes(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_ey
         per1 = sar[hemi1, NSco1, Ls, lon1, Kpvec, fluxbin1]
         perbin1 = np.round(per1 * 100).astype(int) #
 
-        # In northern some sar dat is nan
+        # In northern lats some sar dat is nan's
         # Set those to bin 0 just so it will work but flag them later
-        #per_nan = np.where(perbin1 < -10)[0]
+        # per_nan = np.where(perbin1 < -10)[0]
         #JGREEN 6/2/2021 This was a mistake that was setting the whole pass to flags
         per_nan = np.where(perbin1 < -10)
         perbin1[per_nan] = 0
@@ -544,13 +599,25 @@ def map_poes(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_ey
         # Get the flux at the ref satellite for the measured percentile
         # hemi is 1 for southern, direction is southbound, ref_idn is 20
         fluxval = sarout[1, 1, Ls, ref_ind, Kpvec, perbin1]
+        #fluxval = np.log10(data[evars[eco]][:]) # FOR TESTING I SET THIS BACK TO THE ORIGINAL DATA
         # Flag the bad values again
-        fluxval[nan_inds] = -1
-        fluxval[per_nan] = -1
+        fluxval[nan_inds] =np.nan
+        fluxval[per_nan] = np.nan
+
+        # Now fill in the bad values with the nearest values
+        # because the NN needs complete data
+        # I do this here after mapping because if you do it
+        # before mapping then it mixes data from different lons and
+        # hemispheres which can be very different
+        mask = np.where(~np.isnan(fluxval))
+        interp = NearestNDInterpolator(np.transpose(mask), fluxval[mask])
+        fluxval = interp(*np.indices(fluxval.shape))
 
         map_data[evars[eco]] = fluxval
 
-    
+    sar_ref.close()
+    sar_sat.close()
+
     return map_data
 
 def qloss(y_true,y_pred):
@@ -923,6 +990,201 @@ def write_shells_netcdf_S3(outdir, outdat, Ls, Bmirrors, Energies, sat, modelnam
         fdate = (fdate+dt.timedelta(days=1)).replace(hour=0,minute=0,second=0,microsecond=0)
 
 
+def write_shells_netcdf(outdir, outdat, fname,modelname=None):
+    '''
+    PURPOSE: To write the data to netcdf files under outdir with base fname
+    :param outdir: Directory to write the data with YYYY/SHELLS_YYYYMMDD.nc beneath
+    :param outdat:
+        The input data is dict (timeXL) for each energy channel
+        The NN data dict (timexL) with 'E flux 200.0','E flux 100.0 upper q','E flux 100.0 lower q'
+        Kp*10: Kp data for each pass
+        Kpmax: Kp max in 3 days for each pass
+        Ldims: The L values for the ouputs
+        Bmirror: The bmirror values chosen for each L
+        Energies:
+        sat:
+        modelname
+    :return:
+    '''
+
+    # The data will be stored as netcdf with log flux stored as time X L for each energy
+    # The data from each satellite is added separately so we have to
+    # 1) read any existing file
+    # 2) Add and sort new data
+    # 3) rewrite the file
+    # File format will be outdir/year/shells_YYYYMMDD_V1.nc
+
+    fstart = outdat['time'][0]
+    fdate = pu.unix_time_ms_to_datetime(fstart)
+
+    fedate = pu.unix_time_ms_to_datetime(outdat['time'][-1])
+    allvars = outdat.keys() # this is all the data
+
+    #fluxvars = [i for i in allvars if 'flux' in i]  # Get names of flux cols
+    Kpvars = [i for i in allvars if 'Kp' in i] # this is the two Kp values
+
+    # Step through each day and write the data
+    # fdate is the datetime of the first data point and fedate is the datetime of the last data point
+    while fdate < fedate:
+        # This is the day file associated with fdate
+        file = fname + fdate.strftime('%Y%m%d') + '.nc'
+
+        # This is the local file and path
+        loc_fname = os.path.join(outdir, fdate.strftime('%Y'), file)
+
+        # Check if the file exist already
+
+        file_exists = 0
+
+        if (os.path.exists(loc_fname)):
+            # Then read in the old data file
+            sat_data = nc4.Dataset(loc_fname, 'r+')
+            old_data = dict()
+            # Turn the old data file into a dict
+            for val in sat_data.variables.keys():
+                old_data[val] = sat_data[val][:]
+            file_exists = 1
+
+        if file_exists == 0:
+            # If the file does not exist then start a new file
+            # Check that the directory exists and create it if it doesn't
+
+            local_dir = os.path.join(outdir, fdate.strftime('%Y'))
+            if not (os.path.exists(local_dir)):
+                os.makedirs(local_dir)
+
+            # Create the file locally
+
+            sat_data = nc4.Dataset(loc_fname, 'w')
+            sat_data.Data_Version = 'Version 1.0'
+
+            # Todo pass this value
+            if modelname is not None:
+                sat_data.Model_name = modelname
+
+            # Create the dimensions
+            # Flux variables are time X L, Kp and Kpmax are time,
+            for dim in outdat['dims']:
+                if dim=='time':
+                    sat_data.createDimension(dim, None)
+                else:
+                    sat_data.createDimension(dim, len(outdat[dim]))
+                dimvar = sat_data.createVariable(dim, np.float64, (dim))
+                #dimvar[:] = outdat[dim]
+                if dim =='time':
+                    time.units = 'msec since 1970'
+                    time.description = 'UT time in msec'
+
+            # Now create the rest of the vars
+
+            for key in allvars:
+                print(key)
+                if key not in list(outdat['dims']+['dims']):
+                    vdims = np.shape(outdat[key])
+                    if len(vdims)>1:
+                        sat_data.createVariable(key, np.float64, tuple(outdat['dims']))
+                    elif len(vdims)==1:
+                        # Does it mathc time or Lshell
+                        for dim in outdat['dims']:
+                            if vdims[0]==len(outdat[dim]):
+                                sat_data.createVariable(key, np.float64, (dim))
+
+            # Create the sat variable so you know which satellite pass it was from
+            sat_data.createVariable('sat', str, ('time'))
+            sat_data['sat'].description = 'Name of satellite'
+            sat_data['sat'].units = 'Name of satellite'
+
+        # Now write each variable
+        # Need to clobber any old data with new data
+        # Combine all data (with a 0 for older and 1 for newer)
+        # Then sort and diff and if diff< some amount then
+        # throw out the older data
+
+        old_times = sat_data['time'][:]
+        oflag = np.array([0] * len(old_times))
+
+        # Get the indices for fdate.day only
+        startofday = 1000.0 * pu.unixtime(fdate.replace(hour=0, minute=0, second=0, microsecond=0))
+        endofday = 1000.0 * pu.unixtime(
+            (fdate + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0))
+        tinds = np.where((np.array(outdat['time'][:]) >= startofday) & (np.array(outdat['time'][:]) <= endofday))[0]
+
+        # Do I want this to be an array or list?
+        new_times = np.array([outdat['time'][x] for x in tinds])
+        nflag = np.array([1] * len(new_times))
+
+        if len(old_times) > 0:
+            # If there is already some data
+            # Combine and sort old and new time
+            alltimes = np.append(old_times, new_times)
+            order_args = np.argsort(alltimes)
+
+            # This is all the times and flags sorted
+            # The old data has a flag of 0 and the new data has a flag of 1
+            sort_time = alltimes[order_args]
+            allflags = np.append(oflag, nflag)
+            sortflags = allflags[order_args]
+
+            time_inds = np.append(np.arange(0, len(old_times)), np.arange(0, len(new_times)))
+            sort_inds = time_inds[order_args]
+
+            # diff sbtracts next -prior
+            # So the dups are test_t and test_t+1
+            test_t = np.diff(sort_time)
+
+            # These are the duplicate times
+            # The times are off by msecs
+            dups = np.where(np.abs(test_t) < 5000)[0]
+
+            # Now replace any dups with the most recent
+            for dval in dups:
+                # Find the most recent data
+                if sortflags[dval] == 0:
+                    sort_time[dval] = 0
+                else:
+                    sort_time[dval + 1] = 0
+
+            # Now sort_time should have 0s for data we don't want to keep
+            good_inds = np.where(sort_time > 0)[0]
+
+            # Now translate that into the data that we want
+            for key in allvars:
+                if key not in list(outdat['dims'] + ['dims']):
+                    temp_data = outdat[key][tinds]
+                    if len(np.shape(temp_data))>1:
+                        alldat = np.append(old_data[key][:], temp_data, axis=0)
+                        sat_data[key][:] = alldat[order_args[good_inds]]
+                    else:
+                        temp_data = [outdat[Kval][t] for t in tinds]
+                        alldat = np.append(old_data[Kval][:], temp_data, axis=0)
+                        sat_data[Kval][:] = alldat[order_args[good_inds]]
+
+            # Now set the time variable
+            temp_data = [outdat['time'][t] for t in tinds]
+            alldat = np.append(old_data['time'][:], temp_data, axis=0)
+            sat_data['time'][:] = alldat[order_args[good_inds]]
+
+            # Need the sat variable
+            fval = 'sat'
+            temp_data = np.array([sat] * len(tinds))
+            alldat = np.append(old_data[fval][:], temp_data, axis=0)
+            sat_data[fval][:] = alldat[order_args[good_inds]]
+
+        else:
+            # Just Create the file with the new data
+            sat_data['time'][:] = new_times
+            # Create the flux vars
+            for key in allvars:
+                if key not in list(outdat['dims'] + ['dims']):
+                    sat_data[key][:] = np.array([outdat[key][x] for x in tinds])
+
+            sat_data['sat'][:] = np.array([sat] * len(tinds))
+
+        sat_data.close()
+
+        fdate = (fdate + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def write_shells(outdir, outdat, otype, fname):
     if (otype == 'json') | (otype =='csv'):
         if outdir is None:
@@ -939,6 +1201,114 @@ def write_shells(outdir, outdat, otype, fname):
         # This will write the data to a dbase
         # Todo fix this
         finish = write_shells_inputs_dbase(cdict, map_data, channels, sat, logger)
+        
+def write_shells_dbase(outdir,outdat,cdict):
+    '''
+    PURPOSE: To write the data in outdir to an sqlite dbase at outdir/dbname
+    and store the data in tblname.
+    This assumes that the database already exists with name dbname in outdir and has
+    a table called tblname that has the column names set up already with names
+    time, 'mep_ele_tel90_flux_e1_L_1.0',...'mep_ele_tel90_flux_e1_L_8.0',
+    ...'mep_ele_tel90_flux_e4_L_8.0', 'Kp*10','Kp_max','satID'
+    :param outdir:
+    :param outdat:
+    :param dbname:
+    :param tblname:
+    :return:
+    Todo: This could be updated to look for the dbase and table and if it is not there then
+    create it with the appropriate cols ets
+    '''
+    # Get the start and end time of the data
+    dbase = cdict['dbase']
+    tblname =cdict['tblname']
+    dbtype = cdict['dbtype']
+
+    fstart = outdat['time'][0]
+    fdate = pu.unix_time_ms_to_datetime(fstart)  # Change to datetime
+    fedate = pu.unix_time_ms_to_datetime(outdat['time'][-1])
+    dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
+
+    # Get just the eflux columns
+    fcols = [x for x in list(outdat.keys()) if 'flux' in x]
+
+    newtime = pu.unix_time_ms_to_datetime(outdat['time'])
+
+    # Add data to daily files
+    while fdate <= fedate:
+        # Reformat the outdat dict so that every e flux and L has a key
+        # and get only values for fdate
+        nextday = (fdate + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        dayinds = np.where((newtime >= fdate) & (newtime < nextday))[0]
+
+        newdat = {}  # This is the reformatted new data that will be written
+
+        # Create a string from time that json/csv can write
+
+        newdat['time'] = [newtime[x].strftime(dformat) for x in dayinds]
+
+        for key in fcols:
+            # Split data into lists for each L bin and E
+            if len(np.shape(outdat[key])) > 1:
+                Lname = [i for i in outdat['dims'] if 'L' in i][0]  # Get the L name and
+                for lco, Lval in enumerate(outdat[Lname]):
+                    newcol = key + '_L_' + str(Lval)  # rename the cols to have e flux name and L bin
+                    newdat[newcol] = list(outdat[key][dayinds, lco])
+            else:
+                newdat[key] = list(outdat[key][dayinds])
+
+        # Add the Kp value that was used
+        Kpcols = [x for x in list(outdat.keys()) if 'Kp' in x]
+        for Kpcol in Kpcols:
+            newdat[Kpcol] = list(outdat[Kpcol][dayinds])
+
+        # Add a satid col
+        satid = poes_sat_sem2(outdat['sat']).satid()
+        newdat['satID'] = [satid] * len(dayinds)
+
+        try:
+            # connect to the dbase
+            if dbtype=='sqlite':
+                conn = create_conn_sqlite(os.path.join(outdir,dbase))
+                cursor = conn.cursor()
+
+                # Now add the data
+                query = 'INSERT or REPLACE INTO '+tblname+ '('
+            else:
+                conn = create_conn_msql(cdict)
+                cursor = conn.cursor(buffered=True)
+                query = 'INSERT INTO ' + tblname + '('
+
+            keys = list(newdat.keys())
+            for kco in range(0,len(keys)-1):
+                query = query+'"'+keys[kco]+'", '
+            query = query+keys[-1]
+            if dbtype =='sqlite':
+                query = query+') VALUES ('
+                for kco in range(0,len(keys)-1):
+                    query = query+'?,'
+                query = query+'?)'
+                cursor.executemany(query, np.array(list(newdat.values())).T)
+            else:
+                query = query+') VALUES ('
+                for kco in range(0,len(keys)-1):
+                    query = query+'%s,'
+                query = query+'%s)'
+                #Todo need to test this for mysql
+                query =query +' ON DUPLICATE KEY UPDATE VALUES '
+                for kco in range(1, len(keys) - 1):
+                    query = query + '"' + keys[kco] + '"=%s, '
+                cursor.executemany(query, np.array(list(newdat.values())).T,np.array(list(newdat.values())).T)
+
+        except:
+            logger.error("Can't add to dbase")
+
+        fdate = nextday
+            
+    cursor.close()
+    conn.commit()
+    conn.close()
+
+    return
 
 def write_shells_text(outdir, outdat, fname, otype):
     '''
@@ -956,7 +1326,7 @@ def write_shells_text(outdir, outdat, fname, otype):
     New data is added to existing files for that day and then the filename
     is changed to have the time of the last datapoint.
     
-    Writes out time, e1 L1, e1 L2, ...e2 L1, e2 L2, ... Kp, satId
+    Writes out time, e1 L1, e1 L2, ...e2 L1, e2 L2, ... Kp, Kpmax, satId
     '''
     # Get the start and end time of the data
 
@@ -995,8 +1365,10 @@ def write_shells_text(outdir, outdat, fname, otype):
         
 
         # Add the Kp value that was used
-        Kpcol =  [x for x in list(outdat.keys()) if 'Kp' in x][0]
-        newdat[Kpcol] = list(outdat[Kpcol][dayinds])
+        # Add the Kp value that was used
+        Kpcols = [x for x in list(outdat.keys()) if 'Kp' in x]
+        for Kpcol in Kpcols:
+            newdat[Kpcol] = list(outdat[Kpcol][dayinds])
 
         # Add a satid col
         satid = poes_sat_sem2(outdat['sat']).satid()
@@ -1060,22 +1432,25 @@ def write_shells_text(outdir, outdat, fname, otype):
         tfile = dt.datetime.strptime(newdat['time'][-1],dformat)
         foutnow = os.path.join(outdir,fname+'_'+tfile.strftime('%Y%m%dT%H%M%S')+'.'+otype)
 
-        if otype == 'json':
-            with open(foutnow, "w") as outfile:
-                outfile.write(json_object)
-        else:
-            with open(foutnow, "w") as outfile:
+        try:
+            if otype == 'json':
+                with open(foutnow, "w") as outfile:
+                    outfile.write(json_object)
+            else:
+                with open(foutnow, "w") as outfile:
 
-                # pass the csv file to csv.writer function.
-                writer = csv.writer(outfile)
+                    # pass the csv file to csv.writer function.
+                    writer = csv.writer(outfile)
 
-                # pass dict keys to writerow
-                # function to give the columns 
-                writer.writerow(newdat.keys())
+                    # pass dict keys to writerow
+                    # function to give the columns
+                    writer.writerow(newdat.keys())
 
-                # use writerows function to append values to the corresponding
-                # columns using zip function.
-                writer.writerows(zip(*round_floats(newdat).values()))
+                    # use writerows function to append values to the corresponding
+                    # columns using zip function.
+                    writer.writerows(zip(*round_floats(newdat).values()))
+        except Exception as e:
+            logger.error("Couldn't write file")
 
         if len(flist)>0:
             # If its updating in real time then the HMS of the filname
@@ -1141,6 +1516,7 @@ def get_Lvals(data, inds=None):
           'ByIMF': zerovec, 'BzIMF': zerovec, 'G1': zerovec, 'G2': zerovec,
           'G3': zerovec, 'W1': zerovec, 'W2': zerovec, 'W3': zerovec, 'W4': zerovec, 'W5': zerovec,
           'W6': zerovec, 'AL': zerovec}
+    
     Ldata = sp.irbempy.get_Lstar(ticks, locinew, 90, extMag='0', options=opts, omnivals=om)
     Ldata['Lm']= np.abs(Ldata['Lm'][:])
     Ldata['Lm'][bad_inds] = -1

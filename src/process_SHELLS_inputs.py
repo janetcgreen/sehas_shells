@@ -8,7 +8,7 @@ import os
 import fnmatch
 import requests
 from joblib import load
-#import keras
+import keras
 import netCDF4 as nc4
 from io import BytesIO
 import boto3
@@ -18,12 +18,13 @@ from hapiclient import hapi
 import matplotlib.pyplot as plt
 from hapiclient.hapitime import hapitime2datetime
 import pandas as pd
+import calendar
 
 #from spacepy import coordinates as coord
 #from spacepy.irbempy import get_Lstar
 #import spacepy as sp
 
-#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
 import shells_web_utils as swu
 
@@ -103,18 +104,22 @@ def setupLogging(logfile):
 
     try:
         # Create the output format
-        format = '%(asctime)s:%(levelname)s:%(lineno)s:  %(message)s'
+        format = '%(asctime)s:%(levelname)s:%(filename)s:%(lineno)s:  %(message)s'
         # Set up the root logger to write to file
         logging.basicConfig(filename=logfile, format=format, level=logging.INFO)
-        # Then add the console too
-        console = logging.StreamHandler()
-        console.setLevel(logging.INFO)
-        # set a format which is simpler for console use
-        formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
-        # tell the handler to use this format
-        console.setFormatter(formatter)
-        # add the handler to the root logger
-        logging.getLogger('').addHandler(console)
+        # Check if a console handler for root already exists
+        l = logging.getLogger()
+        if len(l.handlers)<2:
+            # Then add the console too
+            console = logging.StreamHandler()
+            console.setLevel(logging.INFO)
+            # set a format which is simpler for console use
+            formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+            # tell the handler to use this format
+            console.setFormatter(formatter)
+            # add the handler to the root logger
+            logging.getLogger().addHandler(console)
+
     except Exception as err:
         raise(err)
 
@@ -174,25 +179,17 @@ def find_s3_last_time(cdata,fn_pattern):
 def find_last_file(outdir,fn_pattern):
     '''
     PURPOSE: To find the latest file to add SHELLS data to.
-    :param outdir: The directory to look for files or a config file with .ini as the last bit
+    :param outdir: The directory to look for files
     :return fname: The file to add to
     '''
-
-    # The assumed structure is outdir/YYYY/SHELLS_YYYYMMDD.nc
-    # So list all the files in this year and last year
 
     thisyear = dt.datetime.utcnow().year
     # make a list of directories with the current year and next year
     dir_root_list = [os.path.join(outdir,str(thisyear-1)),os.path.join(outdir,str(thisyear))]
     fn_list = list()
 
-    # Make a list of all the files in the directories with fn_pattern
-    for dir_root in dir_root_list:
-        #print(dir_root)
-        for root, dirnames, filenames in os.walk(dir_root):
-            #print(root,dirnames,filenames)
-            for filename in fnmatch.filter(filenames, fn_pattern):
-                fn_list.append(os.path.join(root, filename))
+    fout = os.path.join(outdir, '**', fn_pattern)
+    fn_list = glob.glob(fout, recursive=True)
 
     # Now order the files
     fn_list.sort()
@@ -205,7 +202,7 @@ def find_last_file(outdir,fn_pattern):
 def get_last_time(fname):
     '''
     ----------------------------------------------------------
-    PURPOSE: To get the last time in the most recent file to start
+    PURPOSE: To get the last time in the most recent nc file to start
     processing from
 
     :param fname:
@@ -267,18 +264,20 @@ def connectToDb(cdict):
 
     return conn
 
-def get_start_rt(cdict,sat):
+def get_start_rt(outdir,cdict,sat):
     '''
     PURPOSE: to get the start date for real time processing by checking the last data
-    # in the dbase
+    # in the sqlite dbase
+    :param outdir (str): either the local dir or one that is passed with the location of the
+            sqlite dbase
     :param cdict (dict): dictionary with info for connection to dbase
     :param sat (str): the satellite data to lok or
     :return sdate (datetime):
 
     '''
-    # Create a satellite infor instance
+    # Create a satellite info instance
     satinfo = swu.poes_sat_sem2(sat)
-    satId = satinfo.satid()
+    satId = satinfo.satid() # Get the satID
 
     # ----------- Connect to dbase --------------
     # This will connect to sql or sqlite
@@ -288,7 +287,7 @@ def get_start_rt(cdict,sat):
 
         if satId is not None:
             # This is annoying because sqlite and mysql use different parameter specification
-            query = "SELECT max(unixTime_utc) from "+ cdict['inputstbl'] + " WHERE satId="+str(satId)
+            query = "SELECT max(time) from "+ cdict['tblname'] + " WHERE satId="+str(satId)
             #cursor.execute(query,(satId,))
             cursor.execute(query)
             stime = cursor.fetchone()[0]
@@ -387,6 +386,7 @@ def get_start_rt_text(cdict,sat,outdir):
     checking an already processed archive of data with daily json or csv files
     The start date will be sat dependent because data are downlinked at different
     times
+
     :param cdict (dict): dictionary with information like the output_type
     :param sat (str): Should be like 'n15'
     :param outdir (str): directory to look for data, Default is current dir
@@ -400,6 +400,7 @@ def get_start_rt_text(cdict,sat,outdir):
     satinfo = swu.poes_sat_sem2(sat) # Create a poes sat class instance
     satstart = satinfo.sdate() # Get the date the sat became operational
 
+    # Get the date the sat stopped
     # If the sat is still running edate is None
     satend = satinfo.edate()
     if satend is None:
@@ -417,6 +418,7 @@ def get_start_rt_text(cdict,sat,outdir):
         fout = os.path.join(outdir,'**',cdict['fname']+'*.'+cdict['input_type'])
         flist = glob.glob(fout,recursive=True)
         if len(flist)<1:
+            # If np files yet then start with today
             sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
         else:
             # Open the last file and look for any data for that sat
@@ -442,6 +444,8 @@ def get_start_rt_text(cdict,sat,outdir):
                 sdate = ltime
 
     else:
+        # IF the sat is not operational then set sdate to None
+        # so that it doesn't check for new data
         sdate = None
     return sdate
 
@@ -568,10 +572,10 @@ def get_Kp_max(Kpdata,Kpmsecs,days,times):
     Kpmax = np.zeros((0),dtype= float)
     for co in range(0,len(times)):
         # Get the indices
-        minds = np.where((Kpmsecs>=times[co]-days*24*360000) & (Kpmsecs<=times[co]))[0]
+        minds = np.where((Kpmsecs>=times[co]-days*24*3600000) & (Kpmsecs<=times[co]))[0]
         maxval = np.max(Kpdata[minds])
         Kpmax = np.append(Kpmax,maxval)
-
+    Kpmax = Kpmax*10
     return Kpmax
 
 
@@ -588,31 +592,37 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
     '''
     ---------------------------------------------------------------------------------------------
     PURPOSE: To collect POES/MetOP data from NCEI/NGDC, and process it for the shells model
+    The data can be processed into poes input fluxes or all the way to output
+    neural network mapped fluxes
+
+    The code can be used to process data within a fixed time period between sdate_all and
+    edate (and realtime =0) or it can be set to update from the last processed time to the
+    present with with real time =1 (sdate_all = None, edate = None)
 
     :param: sdate_all (datetime) -
             date to start creating shells data if reprocessing and not rt mode
-            REQUIRED when realtime is 0
+            REQUIRED when realtime is 0 or False
     :param: edate (datetime) -
             date to stop creating shells data if reprocessing and not rt mode
-            REQUIRED when realtime is 0
+            REQUIRED when realtime is 0 or False
     :param: realtime (int) -
             0 for not realtime and 1 for real time
             Default-  0 False
     :param neural (int) -
-            0 to not process to the neural network electron flux data
+            0 to not process to the neural network electron flux
             1 to do the neural network processing
             Default 0
     :param: localdir (str) -
-            Local directory of POES data to process. If this is passed it will look for data
+            Local directory of POES data to process. If passed it will look for data
             locally instead of going to the noaa website (This is not well tested)
     :param: outdir (str) -
             Output directory for daily files of processed  data.
             If none is passed then it is assumed to be the working directory
     :param: cdfdir (str) -
-            Directory of the cumulative dist. function files needed for mapping
+            Directory of the cumulative distribution function files needed for mapping
             poes data to a consistent location
     :param: noaasite (str) -
-            noaa website to get data from if the data is not local 'satdat.ngdc.noaa.gov'
+            noaa website to get data from if the data is not local 'www.ncei.noaa.gov'
     :param: sats list(str) -
             satellites to get data from
             default from command line= ['n15','n18','n19','m01','m02','m03']
@@ -645,12 +655,12 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
     FROM COMMAND LINE
     ----------------
         (REAL TIME example)
-        python process_SHELLS.py -rt -ns satdat.ngdc.noaa.gov -sa n15 n18 n19 m01 m02
+        python process_SHELLS.py -rt -ns www.ncei.noaa.gov -sa n15 n18 n19 m01 m02
             -log /efs/spamstaging/logs/process_SHELLS_rt -c ./configAWS.ini
 
         (REPROCESSING getting data from noaa example)
         (This automatically creates a logfile in the current directory)
-        python process_SHELLS.py -s 2015-01-01 -e 2015-01-02 -ns satdat.ngdc.noaa.gov -sa n15 n18
+        python process_SHELLS.py -s 2015-01-01 -e 2015-01-02 -ns www.ncei.noaa.gov -sa n15 n18
 
         (REPROCESSING getting data locally)
         python process_SHELLS.py -s 2001-01-01 -e 2002-01-01 -ld /Users/janet/PycharmProjects/data/sem/poes/data/raw/ngdc/
@@ -660,12 +670,12 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
     -------------------
     (REAL TIME on AWS)
     import process_POES as proc
-    proc.process_POES(realtime=True, noaasite='satdat.ngdc.noaa.gov', sats= ['n15','n18','n19','m01','m02'],
+    proc.process_POES(realtime=True, noaasite='www.ncei.noaa.gov', sats= ['n15','n18','n19','m01','m02'],
         logfile = '/efs/spamstaging/logs/process_POES_reprocess'
 
     (REPROCESSING on AWS)
     import process_POES as proc
-    proc.process_POES(realtime=FALSE, noaasite='satdat.ngdc.noaa.gov', sats= ['n15','n18','n19','m01','m02'],
+    proc.process_POES(realtime=FALSE, noaasite='www.ncei.noaa.gov', sats= ['n15','n18','n19','m01','m02'],
         logfile = '/efs/spamstaging/logs/process_POES_reprocess'
 
     '''
@@ -685,7 +695,8 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
         #---------------- Set up mapping info -------------------
         # cdf_dir: dir where the cumulative distribution function data is located
         # needed for mapping POES data
-        # These cdf files are lookup tables to go from flux to percentile and vice versa
+        # These cdf
+        # files are lookup tables to go from flux to percentile and vice versa
         # Todo make a default here because its required and add a check for the files
         cdf_dir = cdfdir
 
@@ -730,6 +741,11 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
         else:
             cdict = None
 
+        # If no output file directory passed then assume it is the current one
+        # if it is needed
+        if outdir is None:
+            outdir = os.getcwd()
+
         #------------- Get processing end time ------------------------
         # Real time mode: end time will be utc now.
         # Reprocessing mode: end is whatever is passed
@@ -750,36 +766,39 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
 
             # ----------- Get start times ---------------------
             # Real time mode: start time is from last processed data for that sat
+            # Data from different sats are downloaded at different times
             # Reprocessing mode: start and end time must be passed
 
             if realtime:
-                # sdate should be the last processed data time for sat
+                # sdate should be the last processed data time for the current sat
                 # If no processed data exists yet then it will start with current day
-                # Data can be stored as files (local or S3 bucket) or in sql/HAPI dbase
-
-                # If no output file directory passed then assume it is the current one
-                # if it is needed
-                if outdir is None:
-                    outdir =os.getcwd()
+                # Data can be stored as files (local or S3 bucket), sqlite, mysql or HAPI dbase
 
                 if configfile is not None:
                     # If a configfile is passed then use the input_type
-                    # there to get the start date for processing
-                    if dbase_type=='S3':
-                        # Get start date from files at S3 bucket
-                        sdate = find_s3_last_time(cdict, 'shells_*.nc')
-                    elif cdict['input_type']=='Dbase':
-                        # Or get start date from an sql dbase
+                    # there to get the start date (for real time processing)
+                    #if dbase_type=='S3':
+                    #    # Get start date from files at S3 bucket
+                    #    sdate = find_s3_last_time(cdict, 'shells_*.nc')
+                    if cdict['input_type']=='sqlite':
+                        # Get the last processed data time from an sql dbase
                         # Todo make this also work with sqlite testing dbase
                         # And add a test
                         sdate = get_start_rt(cdict, sat)
                     elif cdict['input_type'] =='hapi':
-                        # This is the one used for ccmc
-                        sdate = get_start_rt_hapi(cdict,sat)
+                        # Get the last processed data time from a hap server
+                        sdate = get_start_rt_hapi(cdict,sat) # Reads last processed from hapi
+
                     elif (cdict['input_type'] =='json') | (cdict['input_type'] =='csv'):
-                        sdate = get_start_rt_text(cdict,sat,outdir)
+                        # Get the last processed data time from files
+                        sdate = get_start_rt_text(cdict,sat,outdir) # Reads last processed from files
+
+                    elif cdict['input_type']=='mysql':
+                        # Todo update this to work with a mysql type dbase
+                        pass
+
                 else:
-                    # Otherwise check local files in outdir
+                    # If no config file then check local nc files in outdir
                     fname = find_last_file(outdir,'shells_*.nc')
 
                     if len(fname)<1:
@@ -826,7 +845,11 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                         # minutes to ensure a complete first pass. (Data is usually dumped once (or twice) per orbit.
                         # i.e., if sdate is 2000-01-02 00:00:00 the code gets data the day before as well
                         # If sdate is 2000-01-02 01:30:00 then it will just get one day of data
-                        if fdate > sdate:
+                        logging.info('file date '+fdate.strftime('%Y-%m-%d %H:%M:%S'))
+                        logging.info('sdate '+sdate.strftime('%Y-%m-%d %H:%M:%S'))
+                        # I add 80 minutes onto sdate because we expect data to be downloaded
+                        # every 90ish minutes.
+                        if fdate > sdate+dt.timedelta(minutes=80):
                             data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
                                             vars=vars, all=True, dtype='proc', site=noaasite)
                         else:
@@ -835,12 +858,14 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                         # Reprocessing mode: just get the full day of data from the remote NOAA site
                         data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
                                                 vars=vars, all=True, dtype='proc', site=noaasite)
+                        logging.info('Got data ' + sdate.strftime("%Y%m%d") + ' ' + sat)
 
                     # If data was returned then process it. Otherwise do nothing but log missing data
 
                     #------------------------- Process returned data ---------------------------------------
 
                     if data is not None:
+                        logging.info('Running '+sdate.strftime("%Y%m%d")+' '+sat)
                         #------------ Make sure data starts with a complete pass -------------
                         # Find index of sdate - 90 minutes to make sure we start with a complete pass
                         i_last = np.where(data['time'][:] > pu.unixtime(sdate -dt.timedelta(minutes=90)) * 1000)[0]
@@ -851,9 +876,12 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                                 data[key]=data[key][i_last[0]::]
 
                         # Fill in L_IGRF where it is -1 in the poes data (in SAA)
+                        logging.info('Filling Ls ' + sdate.strftime("%Y%m%d") + ' ' + sat)
                         Linds = np.where(data['L_IGRF'][:]<0)[0]
-                        Lfills = swu.get_Lvals(data, inds = Linds)
-                        data['L_IGRF'][Linds] = Lfills['Lm'][:]
+                        if len(Linds)>0:
+                            Lfills = swu.get_Lvals(data, inds = Linds)
+                            data['L_IGRF'][Linds] = Lfills['Lm'][:]
+                        logging.info('Done filling Ls ' + sdate.strftime("%Y%m%d") + ' ' + sat)
 
                         # Divide data into passes
                         # passnums is a list of numbered passes and passInds is the index
@@ -890,35 +918,43 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             # When the data is binned, a new time column is created called 'time_pass'
                             # That has the average time of the pass not including nans
                             # That is important because sometimes the pass is short
+                            logging.info('Binning ' + sdate.strftime("%Y%m%d") + ' ' + sat)
                             binned_data = swu.make_Lbin_data(data, Lbins, Lcol = 'L_IGRF', vars = channels)
+                            logging.info('Done binning ' + sdate.strftime("%Y%m%d") + ' ' + sat)
 
                             # ------------------------- Get the Kp data ---------------------
-                            # Todo Update this so it can get Kpmax from CCMC
                             # The NN and the mapping need Kp as an input
-                            # Need to add Kp*10 and 'Kp*10_max_'+str(mdays)+'d' to binned data
+                            # Add Kp*10 and 'Kp*10_max_'+str(mdays)+'d' to binned data
                             # Get the start and end values to get Kp data as datetimes
+
+                            logging.info('Getting Kp ' + sdate.strftime("%Y%m%d") + ' ' + sat)
                             Kp_sdate1 = pu.unix_time_ms_to_datetime(binned_data['time_pass'][0])
-                            # We actually go back 3 days because we need the max in the last 3 days
+                            # Go back 3 days because we need the max in the last 3 days
                             # for NN as well
                             Kp_sdate = Kp_sdate1-dt.timedelta(days = 3)
                             Kp_edate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][-1])
 
                             # Get Kp from iswa dbase
                             iswaserver = 'https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/'
-                            kpdataset = 'noaa_kp_p3h'
+                            if Kp_edate>dt.datetime.utcnow().replace(hour=0,minute=0,second=0):
+                                kpdataset = 'noaa_kp_p3h'
+                            else:
+                                kpdataset = 'gfz_obs_geo_3hour_indices'
                             Kpdata,meta= get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset)
 
+                            logging.info('Got Kp ' + sdate.strftime("%Y%m%d") + ' ' + sat)
                             # Interpolate to binned data times
                             # Change returned time to datetime and then to ctime
+
                             Kptimes = hapitime2datetime(Kpdata['Time'])
                             # Todo make sure this returns the right ctime
-                            Kpmsecs = [dt.datetime.timestamp(x)*1000 for x in Kptimes]
+                            #Kpmsecs = [dt.datetime.timestamp(x)*1000 for x in Kptimes]
+                            Kpmsecs = [calendar.timegm(x.utctimetuple())*1000 for x in Kptimes]
                             binned_data['Kp*10'] = 10*np.interp(binned_data['time_pass'][:], Kpmsecs, Kpdata['KP_3H'])
 
                             # Todo make a test for this
                             # Todo Should this be Kp*10?
                             binned_data['Kp_max'] = get_Kp_max(Kpdata['KP_3H'],Kpmsecs,3,binned_data['time_pass'])
-
 
                             # Add the satellite name to the dict;
                             binned_data['sat'] = [sat for x in range(0,len(binned_data['time_pass'][:]))]
@@ -942,18 +978,20 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             ref_eyear = 2018
 
                             # This bit switches time_pass to time
+                            logging.info('Mapping data '+sdate.strftime("%Y%m%d") + ' ' + sat)
                             print('Mapping data')
 
                             map_data = swu.map_poes(binned_data, channels, sat, sat_ref, ref_ind, cdf_dir, myear, ref_syear, ref_eyear)
+
                             map_data['L_IGRF'] = Lbins[0:-1]
                             map_data['dims'] = ['time','L_IGRF']
                             map_data['sat'] = sat
                             map_data['Kp*10']=binned_data['Kp*10']
+                            map_data['Kp_max'] = binned_data['Kp_max']
                             print('Done mapping data')
 
                             # --------------------- Now do NN if requested ----------------------------
                             if neural:
-                                # Todo: Get the max Kp in last 3 days i fthis is requested
                                 # Energies, Bmirrors, Ls based on Seths analysis
                                 Energies=np.arange(200.,3000.,200.)
                                 Ls = np.arange(3.,6.3,.25)
@@ -961,7 +999,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                                 Bmirrors = [np.floor(2.591e+04*(L**-2.98) )for L in Ls ]
 
                                 print('Doing nn')
-                                outdat = swu.run_nn(map_data,channels,binned_data['Kp*10'][:],binned_data['Kp*10_max_'+str(mdays)+'d'][:],
+                                outdat = swu.run_nn(map_data,channels,binned_data['Kp*10'][:],binned_data['Kp_max_'][:],
                                    out_scale,in_scale,m, L = Ls, Bmirrors = Bmirrors, Energies = Energies)
                                 outdat['dims']=['time','L']
                                 outdat['sat'] = sat
@@ -978,27 +1016,33 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
 
                             # --------------- Write the data ------------------------
                             # Data may go to a dbase, files at S3 bucket or local files
-                            # Todo Update this to write to a dbase
+                            # Todo Update this to write to a dbase if requested
                             print('Writing data')
+                            logging.info('Writing data'+sdate.strftime("%Y%m%d") + ' ' + sat)
                             if configfile is not None:
                                 # If there is a configfile then it is either writing to
-                                # S3, a csv file for CCMC, or a database
-                                if dbase_type =='S3':
+                                # a text csv/json file for CCMC, or an sqlite database
+                                # Todo update to work again with S3 bucket
+                                #if dbase_type =='S3':
                                     # Write data to the S3 bucket
                                     # The S3 bucket is not setup for inputs its just neural data
-                                    finish = swu.write_shells_netcdf_S3(outdir, outdat, Ls, Bmirrors, Energies, sat, hdf5name, cdict)
-                                else:
-                                    if ((cdict['output_type']=='csv')|(cdict['output_type']=='json')):
-                                        # Add data to daily files or dbase
-                                        # Todo make it so that it can write to dbase too
-                                        finish = swu.write_shells(outdir,outdat,cdict['output_type'],cdict['fname'])
-                                    else:
-                                        pass
+                                #    finish = swu.write_shells_netcdf_S3(outdir, outdat, Ls, Bmirrors, Energies, sat, hdf5name, cdict)
+                                #else:
+                                if ((cdict['output_type']=='csv')|(cdict['output_type']=='json')):
+                                    # Add data to daily files csv or json files
+                                    finish = swu.write_shells(outdir,outdat,cdict['output_type'],cdict['fname'])
+                                elif ((cdict['output_type']=='sqlite') | (cdict['output_type']=='mysql')):
+                                    # Add data to a dbase
+                                    finish = swu.write_shells_dbase(outdir,outdat,cdict)
                             else:
-                                # Todo: this should just write to a local files
-                                # Maybe I will take this out
-                                pass
+                                # Todo: this should just write to local nc files
+                                if neural:
+                                    fname = 'shells_neural'
+                                else:
+                                    fname = 'shells_inputs_'
+                                finish = swu.write_shells_netcdf(outdir, outdat,fname)
                             print('Done writing data')
+                            logging.info('Done writing data'+sdate.strftime("%Y%m%d") + ' ' + sat)
                         else:
                             # Don't crash the program if data is missing but log a msg
                             msg = 'No data for ' + sat + ' ' + sdate.strftime("%Y-%m-%d")
@@ -1012,7 +1056,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             logging.warning(msg)
                     # Process the next day of data
                     sdate = (sdate+dt.timedelta(days=1)).replace(hour = 0, minute=0, second=0, microsecond=0)
-
+                    logging.info('Going to next day '+sdate.strftime("%Y%m%d"))
     except Exception as e:
         # If there are any exceptions then log the error
         print(e)
@@ -1067,7 +1111,7 @@ if __name__ == "__main__":
             
     :param: -ns --noaasite (str, Not required)
             This is the noaa website with data. 
-            Required in rt mode and currently should be satdat.ngdc.noaa.gov
+            Required in rt mode and currently should be www.ncei.noaa.gov
             
     :param: -sa --sats (multiple strings)
             List of satellite data to process, i.e. n15 n16 n17
@@ -1106,7 +1150,7 @@ if __name__ == "__main__":
     
     AWS/CCMC Real time SHELLS mode (POES data is always pulled from NOAA)
     -----------------------------------------
-    python process_SHELLS_inputs.py -rt -ns satdat.ngdc.noaa.gov 
+    python process_SHELLS_inputs.py -rt -ns www.ncei.noaa.gov 
         -sa n15 n18 n19 m01 m02 
         -cdf /efs/shells/live/cdfdata/
         -log /efs/shells/logs/process_SHELLS 
@@ -1115,7 +1159,7 @@ if __name__ == "__main__":
     Reprocessing mode (POES data pulled from NOAA)
     -----------------------------------------
     (This automatically creates a logfile in the current directory)
-    python process_SHELLS_inputs.py -s 2015-01-01 -e 2015-12-31 -ns satdat.ngdc.noaa.gov
+    python process_SHELLS_inputs.py -s 2015-01-01 -e 2015-12-31 -ns www.ncei.noaa.gov
         -sa n15 n18
         -cdf /Users/janet/PycharmProjects/SHELLS/cdfdata
             
@@ -1128,7 +1172,7 @@ if __name__ == "__main__":
     # Changes
     # 10/19/2020 JGREEN Added outdir so that output could be written to a file.
     # 09/2021 JGREEN Made significant changes so that data could be accessed at S3 bucket
-    # 12/2022 JGREEN Mad significant changes so that data could be accessed from sql database
+    # 12/2022 JGREEN Made significant changes so that data could be accessed from sql database
 
     '''
     #  PARSE COMMAND LINE ARGUMENTS
@@ -1164,7 +1208,7 @@ if __name__ == "__main__":
     parser.add_argument('-sa', "--sats",
                         help="The sat names to get",
                         required=False,
-                        default=['n15','n16','n17','n18','n19','m01','m02','m03'],
+                        default=['n15','n16','n17','n18','n19','m01','m02'],
                         nargs='+')
     parser.add_argument('-v', "--vars",
                         help="The variables to get",
@@ -1207,7 +1251,7 @@ if __name__ == "__main__":
     #----------------------------------------------------------------
 
     x = process_SHELLS(sdate_all=args.startdate, edate=args.enddate, realtime=args.realtime,
-                       doNN=args.neural,localdir=args.localdir, outdir=args.outdir,
+                       neural=args.neural,localdir=args.localdir, outdir=args.outdir,
                        cdfdir=args.cdfdir, noaasite=args.noaasite, sats=args.sats, vars=args.vars, channels=args.channels,
                        model=args.model[0], modeldir=args.modeldir[0], logfile=args.logfile,
                        configfile=args.config,csection = args.csection)
