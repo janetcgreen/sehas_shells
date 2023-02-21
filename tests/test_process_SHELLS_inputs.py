@@ -193,10 +193,10 @@ class test_process_shells_inputs(unittest.TestCase):
         print('*** TEST: Check that data is created as nc file with no config')
 
         outdir = self.test_dir
-
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
         # Run the code that should create a dbase data for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, outdir, './SHELLS/cdf/',
+                          False, False, None, outdir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
@@ -228,10 +228,11 @@ class test_process_shells_inputs(unittest.TestCase):
 
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_SQLITE')
         outdir = self.test_dir
+        cdfdir = os.path.join( os.getcwd(), '..','SHELLS','cdf' )
 
         # Run the code that should create a dbase data for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, outdir, './SHELLS/cdf/',
+                          False, False, None, outdir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
@@ -276,10 +277,10 @@ class test_process_shells_inputs(unittest.TestCase):
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         if len(flist)>1:
             os.remove(flist[0])
-
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
         # Run the code that should create a csv file for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, self.test_dir, './SHELLS/cdf/',
+                          False, False, None, self.test_dir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
@@ -332,9 +333,9 @@ class test_process_shells_inputs(unittest.TestCase):
         flist = glob.glob(os.path.join(os.getcwd(),fbase))
         if len(flist)>1:
             os.remove(flist[0])
-
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, self.test_dir, './SHELLS/cdf/',
+                          False, False, None, self.test_dir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
@@ -386,9 +387,9 @@ class test_process_shells_inputs(unittest.TestCase):
 
         if len(flist)>0:
             os.remove(flist[0])
-
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
-                          False, False, None, self.test_dir, './SHELLS/cdf/',
+                          False, False, None, self.test_dir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                                 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
@@ -472,9 +473,10 @@ class test_process_shells_inputs(unittest.TestCase):
         outdir = self.test_dir
         sat = 'n15'
         sdate =(dt.datetime.utcnow()-dt.timedelta(days=1))
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
         # This should add a file for the day before
         pr.process_SHELLS(sdate, sdate,
-                          False, False, None, outdir, './SHELLS/cdf/',
+                          False, False, None, outdir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                            'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
@@ -492,10 +494,10 @@ class test_process_shells_inputs(unittest.TestCase):
         dat = pd.read_csv(flist[0]).to_dict(orient='list')
         dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
         lasttime = dt.datetime.strptime(dat['time'][-1],dformat)
-
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
         # Then try to update in rt
         pr.process_SHELLS(None, None,
-                          True, False, None, self.test_dir, './SHELLS/cdf/',
+                          True, False, None, self.test_dir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
                            'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
