@@ -77,11 +77,11 @@ def read_config(configfile,section):
         if ((cdict['input_type']=='dbase') | (cdict['output_type']=='dbase')):
             # If you want to read or write data to a dbase then you need
             # to have user password info etc
-            keys = ['dbuser','dbpass','dbhost','dbase','inputstbl']
+            keys = ['dbuser','dbpass','dbhost','dbase','tblname']
             checkKey(cdict, keys)
         if cdict['input_type']=='sqlite':
             # For sqlite you don't need passwords etc
-            keys = [ 'dbase', 'inputstbl']
+            keys = [ 'dbase', 'tblname']
             checkKey(cdict, keys)         
 
     except Exception as e:
@@ -1221,7 +1221,7 @@ def write_shells_dbase(outdir,outdat,cdict):
     # Get the start and end time of the data
     dbase = cdict['dbase']
     tblname =cdict['tblname']
-    dbtype = cdict['dbtype']
+    dbtype = cdict['output_type']
 
     fstart = outdat['time'][0]
     fdate = pu.unix_time_ms_to_datetime(fstart)  # Change to datetime
