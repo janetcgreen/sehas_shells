@@ -229,10 +229,11 @@ def get_last_time(fname):
     return ltime
 
 
-def connectToDb(cdict):
+def connectToDb(cdict,outdir = None):
     '''
     PURPOSE: To connect to a mysql or sqlite dbase
-    :param cdict: dictionary with needed infor for connecting to dbase
+    :param cdict (dict): dictionary with needed infor for connecting to dbase
+    :param outdir (str): The directory if it is an sqlite dbase
     :return conn: the dbase connection object
 
     # For testing we use an sqlite database that has
@@ -256,7 +257,7 @@ def connectToDb(cdict):
     except Exception as e:
         # try connectin as sqlite
         try:
-            conn = sl.connect(cdict['dbase'])
+            conn = sl.connect(os.path.join(outdir,cdict['dbase']))
         except Exception as err:
             logging.exception(err)
             if conn is not None:
@@ -282,21 +283,22 @@ def get_start_rt(outdir,cdict,sat):
     # ----------- Connect to dbase --------------
     # This will connect to sql or sqlite
     try:
-        conn = connectToDb(cdict)
+        conn = connectToDb(cdict,outdir)
         cursor = conn.cursor()
 
         if satId is not None:
             # This is annoying because sqlite and mysql use different parameter specification
             query = "SELECT max(time) from "+ cdict['tblname'] + " WHERE satId="+str(satId)
             #cursor.execute(query,(satId,))
+            # Todo check if this works with data in there
             cursor.execute(query)
-            stime = cursor.fetchone()[0]
+            stime = cursor.fetchone()
 
-            if stime is None:
+            if stime[0] is None:
                 sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
             else:
                 #Todo check that this is giving the right time
-                sdate = dt.datetime.utcfromtimestamp(stime)
+                sdate = dt.datetime.utcfromtimestamp(stime[0])
         else:
             sdate = None
             logging.error('No satId for sat='+sat)
@@ -732,8 +734,8 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
         # -----------------------Read config file if passed --------------
         # If a config file is passed the shells data will be accessed and stored
         # based on what is in the logfile. This could be
-        # AWS S3 bucket, or mysql type dbase, hapi server, csv, or json
-        # Otherwise it can be run from a local cache of netcdf files
+        # AWS S3 bucket, or mysql/sqlite type dbase, hapi server, csv, or json
+        # Otherwise it can be run with a local cache of netcdf files
 
         if configfile is not None:
             # csection is the header in the configfile to get info from
@@ -782,8 +784,6 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                     #    sdate = find_s3_last_time(cdict, 'shells_*.nc')
                     if cdict['input_type']=='sqlite':
                         # Get the last processed data time from an sql dbase
-                        # Todo make this also work with sqlite testing dbase
-                        # And add a test
                         sdate = get_start_rt(cdict, sat)
                     elif cdict['input_type'] =='hapi':
                         # Get the last processed data time from a hap server
