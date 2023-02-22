@@ -1,0 +1,7 @@
+.spyproject
+__pycache__
+core.*
+*.pyc
+*~
+*.csv
+*.err

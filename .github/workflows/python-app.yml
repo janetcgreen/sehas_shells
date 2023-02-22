@@ -1,0 +1,58 @@
+name: CI script
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" and "development"  branches
+  push:
+    #branches: [ "main", "development" ]
+  pull_request:
+    #branches: [ "main", "development" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      #- uses: actions/checkout@v3
+      - uses: nschloe/action-cached-lfs-checkout@v1
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.9"   # install the python version
+        
+      - name: Install Python packages
+        run: |
+          python --version
+          
+          python -m pip install --upgrade pip
+          
+          # pip makes no promises to install the packages in the order they are declared in the requirements file
+          # *** if [ -f requirements.txt ]; then pip install -r requirements.txt; fi ***
+          
+          # The workaround is to run the pip install command while reading the requirements file line by line. 
+          # Either of the scripts listed below yields the desired outcome.
+          # 1)
+          # grep -v '^#' requirements.txt | xargs -n 1 -L 1 pip install
+          # 2)
+          for line in $(cat requirements.txt)
+          do
+            pip install $line
+          done
+          
+          cp src/irbempy.py /opt/hostedtoolcache/Python/3.9.16/x64/lib/python3.9/site-packages/spacepy/irbempy/
+          
+      # Runs a single command using the runners shell
+      - name: Run a one-line script
+        run: |
+          export PYTHONPATH=../src
+          cd tests
+          python test_process_SHELLS_inputs.py
