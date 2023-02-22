@@ -13,7 +13,7 @@ import pandas as pd
 import tempfile
 import shutil
 
-#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 #sys.path.insert(1, '/efs/spamstaging/live/chargehaz/')
 import shells_web_utils as swu
 
@@ -460,7 +460,7 @@ class test_process_shells_inputs(unittest.TestCase):
         testdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
         self.assertEqual(sdate, testdate)
 
-    def test_B_run_shells_csv_realtime_update(self):
+    def test_A1_run_shells_csv_realtime_update(self):
         #==================================================
         # TEST: Check that a csv file updates in real time mode
         #==================================================
@@ -472,7 +472,7 @@ class test_process_shells_inputs(unittest.TestCase):
         cdict, dbtype = swu.read_config(self.configfile, 'SHELLS_TESTING_RT')
         outdir = self.test_dir
         sat = 'n15'
-        sdate =(dt.datetime.utcnow()-dt.timedelta(days=1))
+        sdate =(dt.datetime.utcnow()-dt.timedelta(days=2))
         cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
         # This should add a file for the day before
         pr.process_SHELLS(sdate, sdate,
@@ -490,7 +490,7 @@ class test_process_shells_inputs(unittest.TestCase):
         dformat = '%Y%m%d'
         fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
         flist = glob.glob(os.path.join(self.test_dir,fbase))
-        flist.reverse()
+        flist.sort(reverse=True)
         dat = pd.read_csv(flist[0]).to_dict(orient='list')
         dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
         lasttime = dt.datetime.strptime(dat['time'][-1],dformat)
@@ -512,10 +512,11 @@ class test_process_shells_inputs(unittest.TestCase):
         # This might fail if you run it at 1:00 UT because there might
         # not be new data
         dformat = '%Y%m%d'
-        sdate = dt.datetime.utcnow()
-        fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
+        #sdate = dt.datetime.utcnow()
+        #fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
+        fbase = cdict['fname']+'_'+'*.csv'
         flist = glob.glob(os.path.join(self.test_dir,fbase))
-        flist.reverse()
+        flist.sort(reverse=True)
         dat = pd.read_csv(flist[0]).to_dict(orient='list')
         dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
         updatedtime = dt.datetime.strptime(dat['time'][-1],dformat)
