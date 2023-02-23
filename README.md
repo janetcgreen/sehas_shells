@@ -1,6 +1,6 @@
 #### Git Large File Storage (LFS)
 
-LFS handles large files (.nc files) by storing references to the file in the repository, but not the actual file itself. To work around Git's architecture, Git LFS creates a pointer file which acts as a reference to the actual file (which is stored somewhere else). GitHub manages this pointer file in your repository. When you clone the repository down, GitHub uses the pointer file as a map to go and find the large file for you.
+LFS handles large files (.nc files) by storing references to the file in the repository, but not the actual file itself. To work around Git's architecture, Git LFS creates a pointer file which acts as a reference to the actual file (which is stored somewhere else). GitHub manages this pointer file in your repository. When you clone the repository, GitHub uses the pointer file as a map to go and find the large file for you.
 
 1. Download and install the Git LFS:
 
