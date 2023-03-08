@@ -22,8 +22,7 @@ class PropUpdateSchema(Schema):
 
     # Turn pitch angle into magnetic field strength.
     # For now we will assume fixed values for each location
-    # Bmirror = np.floor(2.591e+04*(L**-2.98) where L=4)    # numpy
-    Bmirror = fields.Float()
+    Bmirror = np.floor(2.591e+04 * (Lshell ** -2.98))
 
 
 class SatelliteSchema(Schema):
