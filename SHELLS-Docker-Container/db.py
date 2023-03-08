@@ -1,0 +1,2 @@
+satellites = {}
+props = {}

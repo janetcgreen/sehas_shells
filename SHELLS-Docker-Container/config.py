@@ -1,0 +1,5 @@
+import os
+
+OUT_SCALE_FILENAME = ""
+IN_SCALE_FILENAME = ""
+HDF5FILE = ""
