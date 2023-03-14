@@ -1,2 +1,1 @@
-satellites = {}
-props = {}
+iodb = {}
