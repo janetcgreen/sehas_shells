@@ -8,14 +8,12 @@ import sqlite3 as sl
 import keras
 import mysql.connector
 import numpy as np
-import pandas as pd
-from hapiclient import hapi
-from hapiclient.hapitime import hapitime2datetime
 from joblib import load
 
 
 # ----------------------- Basic functions ----------------------------
 # --------------------------------------------------------------------
+
 def qloss(y_true, y_pred):
     qs = [0.25, 0.5, 0.75]
     q = np.constant(np.array([qs]), dtype=np.float32)
@@ -104,7 +102,7 @@ def connectToDb(cdict, outdir=None):
                                        host=dbhost,
                                        database=dbase)
     except Exception as e:
-        # try connectin as sqlite
+        # try connection as sqlite
         try:
             conn = sl.connect(os.path.join(outdir, cdict['dbase']))
         except Exception as err:
@@ -329,20 +327,18 @@ def get_kp_data_iswa(Kp_sdate, Kp_edate, iswaserver, kpdataset):
     return data, meta
 
 
-# ------------------- The main process_SHELLS function--------------------------
-# ===========================================================================
+# ------------------- The main process_data function -----------------
+# --------------------------------------------------------------------
 
 def process_data(sdate=None, edate=None):
     try:
         # ---------------- Set up mapping info -------------------
 
-        # ----------------- Set up nn if needed --------------------
+        # --------------------- Set up nn ------------------------
         # load in transforms,model for Neural Network
         # They are always a trio of files: in_scale, out_scale binary files
         # and a model_quantile HDF5 file.
         #
-
-        print(os.environ.get('OUT_SCALE_FILE'))
 
         out_scale = load(os.environ.get('OUT_SCALE_FILE'))
         in_scale = load(os.environ.get('IN_SCALE_FILE'))
