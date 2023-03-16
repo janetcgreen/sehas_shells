@@ -348,3 +348,41 @@ def process_data(sdate=None, edate=None):
         # If there are any exceptions then log the error
         print(e)
         logging.error(e)
+
+
+def read_sqlite_inputs(sdate=None, edate=None):
+    conn = None
+    rows = None
+
+    try:
+        # Connect to the dbase
+        conn = sl.connect('./resources/test_sehas_shells.sq')
+        cursor = conn.cursor()
+
+        # Read in the SHELLS input data for the range of times passed by the user
+        cursor.execute(
+            "SELECT * FROM ShellsInputsTbl "
+            "WHERE (time BETWEEN ? AND ?) "
+            "OR time = (SELECT MAX(time) FROM ShellsInputsTbl WHERE time < ?) "
+            "ORDER BY time", (sdate, edate, sdate))
+        rows = cursor.fetchall()
+
+        # Get the column names
+        names = [description[0] for description in cursor.description]
+        # print(names)
+
+        if conn is not None:
+            conn.close()
+
+    except Exception as err:
+        logging.error('Problems connecting to dbase' + str(err))
+        if conn is not None:
+            conn.close()
+
+    return rows
+
+
+SHELLS_input = read_sqlite_inputs('2022-01-10T20:16:20.967250Z', '2022-01-10T20:39:36.279714Z')
+
+for row in SHELLS_input:
+    print(row)

@@ -1,4 +1,8 @@
 flask
 flask-smorest
 python-dotenv
+joblib
+keras
+mysql.connector
 numpy
+tensorflow

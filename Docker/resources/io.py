@@ -1,5 +1,6 @@
 import uuid
 
+import process_io as pi
 from db import iodb
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
@@ -50,6 +51,8 @@ class IOList(MethodView):
         for io in iodb.values():
             if io_data["time"] == io["time"]:
                 abort(400, message=f"IO already exists.")
+
+        pi.process_data()
 
         io_id = uuid.uuid4().hex
         io = {**io_data, "id": io_id}
