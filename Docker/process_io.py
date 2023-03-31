@@ -87,7 +87,7 @@ def process_data(sdate=None, edate=None):
 
         # Energies, Bmirrors, Ls based on Seths analysis
         Energies = np.arange(200., 3000., 200.)
-        Ls = 4.0
+        Ls = 4
         Bmirrors = np.floor(2.591e+04 * (Ls ** -2.98))
 
         # Initialize map_data and index
@@ -119,7 +119,7 @@ def process_data(sdate=None, edate=None):
 
         print('Doing nn')
         outdat = swu.run_nn(map_data, channels, Kp10[:], Kp_max[:], out_scale, in_scale, hdf5,
-                            L=Ls,
+                            L=np.array([Ls]),
                             Bmirrors=Bmirrors,
                             Energies=Energies)
         # outdat['dims'] = ['time', 'L']
