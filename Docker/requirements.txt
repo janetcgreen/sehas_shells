@@ -6,3 +6,4 @@ keras
 mysql.connector
 numpy
 tensorflow
+scikit-learn

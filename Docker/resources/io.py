@@ -1,61 +1,41 @@
 import uuid
 
-import process_io as pi
-from db import iodb
+import numpy as np
+import process_inputs as pi
 from flask.views import MethodView
-from flask_smorest import Blueprint, abort
-from schemas import IOSchema, IOUpdateSchema
+from flask_smorest import Blueprint
+from schemas import IOSchema
 
 blp = Blueprint("I/O", __name__, description="Operations on I/O db")
-
-
-@blp.route("/io/<string:io_id>")
-class IO(MethodView):
-    @blp.response(200, IOSchema)
-    def get(self, io_id):
-        try:
-            return iodb[io_id]
-        except KeyError:
-            abort(404, message="IO not found.")
-
-    def delete(self, io_id):
-        try:
-            del iodb[io_id]
-            return {"message": "IO deleted."}
-        except KeyError:
-            abort(404, message="IO not found.")
-
-    @blp.arguments(IOUpdateSchema)
-    @blp.response(200, IOSchema)
-    def put(self, io_data, io_id):
-        try:
-            io = iodb[io_id]
-
-            # https://blog.teclado.com/python-dictionary-merge-update-operators/
-            io |= io_data
-
-            return io
-        except KeyError:
-            abort(404, message="IO not found.")
 
 
 @blp.route("/io")
 class IOList(MethodView):
     @blp.response(200, IOSchema(many=True))
     def get(self):
-        return iodb.values()
+        # Ls and Energies
+        Ls = np.array([4])
+        Energies = np.arange(200., 3000., 200.)
+
+        output = pi.process_data('2022-01-10T20:16:20.967250Z', '2022-01-10T20:16:21.967250Z', Ls, Energies)
+        print(output)
+
+        return output
 
     @blp.arguments(IOSchema)
     @blp.response(201, IOSchema)
     def post(self, io_data):
-        for io in iodb.values():
-            if io_data["time"] == io["time"]:
-                abort(400, message=f"IO already exists.")
-
-        pi.process_data()
-
         io_id = uuid.uuid4().hex
         io = {**io_data, "id": io_id}
-        iodb[io_id] = io
 
-        return io
+        Ls = np.array([4])
+        Energies = np.arange(200., 3000., 200.)
+
+        time = list(io_data["time"].split(','))
+        # from datetime import datetime
+        # time_dt = [datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%fZ') for time in time_str]
+
+        output = pi.process_data(min(time), max(time), Ls, Energies)
+        print('THE END! ', output)
+
+        return output
