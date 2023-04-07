@@ -1,24 +1,14 @@
-import numpy as np
 from marshmallow import Schema, fields
 
 
 class IOSchema(Schema):
-    id = fields.Str(dump_only=True)
-    time = fields.Str(required=True)  # string -> dt
-    x = fields.Float(required=True)
-    y = fields.Float(required=True)
-    z = fields.Float(required=True)
-    Lshell = fields.Float(required=False)  # output
-    energy = fields.Float(required=True)
-    pitch_angle = fields.Float(required=True)
-    Bmirror = fields.Float(required=False)  # output
-
-
-class IOUpdateSchema(Schema):
-    # Turn each xyz location into Lshell (this will be done by calling  the Aerospace code.
-    # To start we will just set a fixed Lshell value for each location (L=4))
-    Lshell = 4
-
-    # Turn pitch angle into magnetic field strength.
-    # For now we will assume fixed values for each location
-    Bmirror = np.floor(2.591e+04 * (Lshell ** -2.98))
+    # inputs
+    time = fields.Str(required=True)  # dt format:  list of times
+    x = fields.Float(required=True)  # list of x corresponding to each time
+    y = fields.Float(required=True)  # list of y corresponding to each time
+    z = fields.Float(required=True)  # list of  z corresponding to each time
+    energy = fields.Float(required=True)  # list
+    pitch_angle = fields.Float(required=True)  # list
+    # outputs
+    Lshell = fields.Float(required=False)  # based on x,y,z
+    Bmirror = fields.Float(required=False)
