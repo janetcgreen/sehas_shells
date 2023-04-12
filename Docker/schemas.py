@@ -7,8 +7,8 @@ class IOSchema(Schema):
     x = fields.Float(required=True)  # list of x corresponding to each time
     y = fields.Float(required=True)  # list of y corresponding to each time
     z = fields.Float(required=True)  # list of  z corresponding to each time
-    energy = fields.Float(required=True)  # list
+    Energies = fields.Str(required=True)  # list of floats
     pitch_angle = fields.Float(required=True)  # list
     # outputs
-    Lshell = fields.Float(required=False)  # based on x,y,z
-    Bmirror = fields.Float(required=False)
+    L = fields.Str(required=False)  # based on x,y,z
+    Bmirrors = fields.Str(required=False)

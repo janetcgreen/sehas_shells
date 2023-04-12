@@ -181,8 +181,7 @@ def process_data(sdate, edate, Ls, Energies):
 
         # out_scale = load("./resources/out_scale_final_09242021.bin")
         # in_scale = load("./resources/in_scale_final_09242021.bin")
-        # hdf5 = keras.models.load_model("./resources/shells_model_final_v6_09242021.h5", custom_objects={'loss': qloss},
-        #                                compile=False)
+        # hdf5 = keras.models.load_model("./resources/shells_model_final_v6_09242021.h5", custom_objects={'loss': qloss}, compile=False)
 
         keys, rows = read_db_inputs(sdate, edate)
 
