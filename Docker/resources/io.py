@@ -1,6 +1,6 @@
+import json
 import uuid
 
-import numpy as np
 import process_inputs as pi
 from flask.views import MethodView
 from flask_smorest import Blueprint
@@ -11,17 +11,6 @@ blp = Blueprint("I/O", __name__, description="Operations on I/O db")
 
 @blp.route("/io")
 class IOList(MethodView):
-    @blp.response(200, IOSchema(many=True))
-    def get(self):
-        # Ls and Energies
-        Ls = np.array([4])
-        Energies = np.arange(200., 3000., 200.)
-
-        output = pi.process_data('2022-01-10T20:16:20.967250Z', '2022-01-10T20:16:21.967250Z', Ls, Energies)
-        print(output)
-
-        return output
-
     @blp.arguments(IOSchema)
     @blp.response(201, IOSchema)
     def post(self, io_data):
@@ -41,10 +30,16 @@ class IOList(MethodView):
         energies = [float(idx) for idx in io_data["Energies"].split(', ')]
         print('energies: ', energies)
 
-        Ls = np.array([4])
+        Ls = [4., 4.]
         print('Ls: ', Ls)
 
         output = pi.process_data(min(time), max(time), Ls, energies)
-        print('THE END! ', output)
 
-        return output
+        # Pretty-Print JSON
+        json_data = {**io_data, "json_data": json.dumps(output, indent=0)}
+
+        # Write Pretty-Print JSON data to file
+        with open("output.json", "w") as write_file:
+            json.dump(output, write_file, indent=4)
+
+        return json_data

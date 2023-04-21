@@ -10,5 +10,6 @@ class IOSchema(Schema):
     Energies = fields.Str(required=True)  # list of floats
     pitch_angle = fields.Float(required=True)  # list
     # outputs
-    L = fields.Str(required=False)  # based on x,y,z
-    Bmirrors = fields.Str(required=False)
+    # L = fields.Str(required=False)  # based on x,y,z
+    # Bmirrors = fields.Str(required=False)
+    json_data = fields.Str(required=False)

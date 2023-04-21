@@ -159,7 +159,7 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                         'E flux ' + str(int(Energies[eco])) + ' lower q', ]
                 for cco in range(0, len(cols)):
                     temp = outdat[cols[cco]][:]
-                    outdat[cols[cco]] = np.vstack((temp, fpre[:, cco]))
+                    outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
 
     return outdat
 
@@ -189,7 +189,7 @@ def process_data(sdate, edate, Ls, Energies):
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
 
         # Bmirrors
-        Bmirrors = np.floor(2.591e+04 * (Ls ** -2.98))
+        Bmirrors = [np.floor(2.591e+04 * (L ** -2.98)) for L in Ls]
 
         # Initialize map_data and index
         map_data = {}
