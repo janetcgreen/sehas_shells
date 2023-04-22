@@ -1,6 +1,7 @@
 import logging
 import os
 import sqlite3 as sl
+from bisect import bisect_left
 
 import keras
 import numpy as np
@@ -13,6 +14,20 @@ def qloss(y_true, y_pred):
     e = y_true - y_pred
     v = np.maximum(q * e, (q - 1) * e)
     return keras.backend.mean(v)
+
+
+def get_nearest(list_dt, dt):
+    """
+    Assumes list_dt is sorted. Returns nearest value to dt.
+    """
+    pos = bisect_left(list_dt, dt)
+
+    if pos == 0:
+        return list_dt[0]
+    if pos == len(list_dt):
+        return list_dt[-1]
+
+    return list_dt[pos - 1]
 
 
 def read_db_inputs(sdate, edate):
@@ -31,6 +46,56 @@ def read_db_inputs(sdate, edate):
             "WHERE (time BETWEEN ? AND ?) "
             "OR time = (SELECT MAX(time) FROM ShellsInputsTbl WHERE time < ?) "
             "ORDER BY time", (sdate, edate, sdate))
+        rows = cursor.fetchall()
+
+        # Get the column names
+        names = [description[0] for description in cursor.description]
+        # print(names)
+
+        # Get the column number
+        cursor.execute("SELECT COUNT(*) FROM pragma_table_info('ShellsInputsTbl')")
+        count = cursor.fetchall()
+        # print(count[0][0])
+
+        if conn is not None:
+            conn.close()
+
+    except Exception as err:
+        logging.error('Problems connecting to dbase' + str(err))
+        if conn is not None:
+            conn.close()
+
+    return names, rows
+
+
+def read_db_inputs_2(req_times):
+    conn = None
+    names = None
+    rows = None
+
+    try:
+        # Connect to the dbase
+        conn = sl.connect('./resources/test_sehas_shells.sq')
+        cursor = conn.cursor()
+
+        # Read in the SHELLS input data for the range of times passed by the user
+        cursor.execute(
+            "SELECT time FROM ShellsInputsTbl "
+            "WHERE (time BETWEEN ? AND ?) "
+            "OR time = (SELECT MAX(time) FROM ShellsInputsTbl WHERE time < ?) "
+            "ORDER BY time", (min(req_times), max(req_times), min(req_times)))
+        input_times = [item[0] for item in cursor.fetchall()]
+
+        # Find the input poes data nearest to the requested times in the CCMC HAPI database
+        nearest_times = [get_nearest(input_times, t) for t in req_times]
+
+        print('req times: ', req_times)
+        print('input times: ', input_times)
+        print('nearest times: ', nearest_times)
+
+        # Read in the SHELLS input data for the range of nearest times
+        sql = "SELECT * FROM ShellsInputsTbl WHERE time IN ({seq})".format(seq=','.join(['?'] * len(nearest_times)))
+        cursor.execute(sql, nearest_times)
         rows = cursor.fetchall()
 
         # Get the column names
@@ -164,7 +229,7 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     return outdat
 
 
-def process_data(sdate, edate, Ls, Energies):
+def process_data(time, Ls, Energies):
     # Create a dict for the output data
     outdat = {}
 
@@ -183,7 +248,8 @@ def process_data(sdate, edate, Ls, Energies):
         # in_scale = load("./resources/in_scale_final_09242021.bin")
         # hdf5 = keras.models.load_model("./resources/shells_model_final_v6_09242021.h5", custom_objects={'loss': qloss}, compile=False)
 
-        keys, rows = read_db_inputs(sdate, edate)
+        keys, rows = read_db_inputs_2(time)
+        # keys, rows = read_db_inputs(sdate, edate)
 
         # List of the channels
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
@@ -191,7 +257,7 @@ def process_data(sdate, edate, Ls, Energies):
         # Bmirrors
         Bmirrors = [np.floor(2.591e+04 * (L ** -2.98)) for L in Ls]
 
-        # Initialize map_data and index
+        # Initialize map_data
         map_data = {}
         time_arr = []
         e1_arr, e2_arr, e3_arr, e4_arr = [], [], [], []
@@ -219,10 +285,8 @@ def process_data(sdate, edate, Ls, Energies):
         map_data['mep_ele_tel90_flux_e4'] = np.array(e4_arr)
 
         print('Doing nn')
-
         outdat = run_nn(map_data, channels, Kp10[:], Kp_max[:], out_scale, in_scale, hdf5, L=Ls, Bmirrors=Bmirrors,
                         Energies=Energies)
-
         print('Done with nn')
 
     except Exception as e:
