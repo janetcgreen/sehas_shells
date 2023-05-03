@@ -7,9 +7,10 @@ class IOSchema(Schema):
     x = fields.Float(required=True)  # list of x corresponding to each time
     y = fields.Float(required=True)  # list of y corresponding to each time
     z = fields.Float(required=True)  # list of  z corresponding to each time
-    Energies = fields.Str(required=True)  # list of floats
-    pitch_angle = fields.Float(required=True)  # list
+    xyz = fields.List(fields.List(fields.Float()), required=True)  # list of  x,y,z corresponding to each time (floats)
+    Energies = fields.List(fields.Float(), required=True)  # list of energies (floats)
+    pitch_angles = fields.List(fields.Float(), required=True)  # list of pitch angles (floats)
     # outputs
     # L = fields.Str(required=False)  # based on x,y,z
-    # Bmirrors = fields.Str(required=False)
-    json_data = fields.Str(required=False)
+    # Bmirrors = fields.Str(required=False) # based on x,y,z
+    json_output = fields.Str(required=False)

@@ -136,10 +136,10 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     if Energies is None:
         Energies = np.arange(200.0, 3000.0, 200.0)
 
-    # The Bmirror values for the output at each L
+    # The Bmirror values for the output at each l
     if Bmirrors is None:
         # This is for the value at the equator
-        Bmirrors = [2.591e+04 * (L ** -2.98) for L in Ls]
+        Bmirrors = [2.591e+04 * (l ** -2.98) for l in L]
 
     # L values for the ouput corresponding to each bmirror
     if L is None:
@@ -229,7 +229,7 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     return outdat
 
 
-def process_data(time, Ls, Energies):
+def process_data(time, Ls, Bmirrors, Energies):
     # Create a dict for the output data
     outdat = {}
 
@@ -253,9 +253,6 @@ def process_data(time, Ls, Energies):
 
         # List of the channels
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
-
-        # Bmirrors
-        Bmirrors = [np.floor(2.591e+04 * (L ** -2.98)) for L in Ls]
 
         # Initialize map_data
         map_data = {}
