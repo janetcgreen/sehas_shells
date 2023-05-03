@@ -89,7 +89,8 @@ def _make_partials(kext,sysaxes,mjd,x1,x2,x3,alpha,partials,Kp=None):
         partials.alpha = expand_alpha(cm.alpha,cm.Nt)
         partials.beta = np.zeros(partials.alpha.shape,dtype=float) # beta is deprecated
         if partials.alpha.shape[0] == 1:
-            partials.alpha = np.matlib.repmat(cm.alpha,cm.Nt,1)
+            #partials.alpha = np.matlib.repmat(cm.alpha,cm.Nt,1) # repmat deprecated
+            partials.alpha = np.broadcast_to(cm.alpha,(cm.Nt,1))
 
     alpha = expand_alpha(alpha,len(mjd))
     if ('alpha' in partials) and (not np.array_equal(alpha,partials.alpha)):
