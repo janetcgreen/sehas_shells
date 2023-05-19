@@ -1,3 +1,6 @@
+import json
+import requests
+import os
 import uuid
 
 import numpy as np
@@ -11,31 +14,48 @@ blp = Blueprint("I/O", __name__, description="Operations on I/O db")
 
 @blp.route("/io")
 class IOList(MethodView):
-    @blp.response(200, IOSchema(many=True))
-    def get(self):
-        # Ls and Energies
-        Ls = np.array([4])
-        Energies = np.arange(200., 3000., 200.)
-
-        output = pi.process_data('2022-01-10T20:16:20.967250Z', '2022-01-10T20:16:21.967250Z', Ls, Energies)
-        print(output)
-
-        return output
-
     @blp.arguments(IOSchema)
     @blp.response(201, IOSchema)
     def post(self, io_data):
-        io_id = uuid.uuid4().hex
-        io = {**io_data, "id": io_id}
 
-        Ls = np.array([4])
-        Energies = np.arange(200., 3000., 200.)
+        url = os.environ.get("MAGEPHEM")
 
-        time = list(io_data["time"].split(','))
-        # from datetime import datetime
-        # time_dt = [datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%fZ') for time in time_str]
+        # User inputs date/time, x,y,z and pitch angles
+        # Create the right json input structure for magephem request
+        magephem_input = {
+            # list of dates in YYYY-MM-DDTHH:MM:SS.mmm(uuu)Z format
+            # example: ["2022-01-10T17:05:00.967250Z", "2022-01-10T18:18:00.967250Z"]
+            "dates": io_data["time"],
 
-        output = pi.process_data(min(time), max(time), Ls, Energies)
-        print('THE END! ', output)
+            # list of input 3-D coordinate sets (nested list)
+            # example: [[1,2,3],[4,5,6]]
+            "X": io_data["xyz"],
 
-        return output
+            # scalar input pitch angle
+            # example: [10.0, 45.0, 90.0]
+            "alpha": io_data["pitch_angles"],
+            "kext": "opq",
+            "sys": "GDZ",
+            "outputs": ["Bm", "L"]
+        }
+
+        # Convert x,y,z to Ls, Bm using magephem request:
+        # (time1,x1,y1,z1) -> (L1,Bm1)
+        # (time2,x2,y2,z2) -> (L2,Bm2)
+        # The output json structure will have L and Bm for each time
+        try:
+            magephem_response = requests.post(url, json=magephem_input).json()
+            print('magephem_response: ', magephem_response)
+        except Exception as e:
+            print('e : ', e)
+
+        output = pi.process_data(io_data["time"], magephem_response["L"], magephem_response["Bm"], io_data["energies"])
+
+        # Pretty-Print JSON
+        json_output = {**io_data, "json_output": output}
+
+        # Write Pretty-Print JSON data to file
+        with open("output.json", "w") as write_file:
+            json.dump(output, write_file, indent=4)
+
+        return json_output
