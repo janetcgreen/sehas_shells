@@ -1,5 +1,6 @@
 import json
 import requests
+import os
 import uuid
 
 import numpy as np
@@ -16,69 +17,39 @@ class IOList(MethodView):
     @blp.arguments(IOSchema)
     @blp.response(201, IOSchema)
     def post(self, io_data):
-        io_id = uuid.uuid4().hex
-        io = {**io_data, "id": io_id}
 
-        # req_times="2022-01-10T17:05:00.967250Z, 2022-01-10T18:18:00.967250Z, 2022-01-10T19:11:00.967250Z, 2022-01-10T20:20:00.967250Z"
-        # convert string to dt list using list comprehension + split() + datetime.strptime()
-        # from datetime import datetime
-        # time_dt = [datetime.strptime(idx, '%Y-%m-%dT%H:%M:%S.%fZ') for idx in time_str]
-        # time = list(io_data["time"].split(', '))
-        # print('req times: ', time)
+        url = os.environ.get("MAGEPHEM")
 
-        # energies = np.arange(200., 3000., 200.)
-        # energies = "200., 400., 600., 800., 1000., 1200., 1400., 1600., 1800., 2000., 2200., 2400., 2600., 2800."
-        # convert string to float list using list comprehension + split() + float()
-        # energies = [float(idx) for idx in io_data["Energies"].split(', ')]
-        # energies = io_data["energies"]
-        # print('energies: ', energies)
-
-        # Ls = [4., 4.]
-        # print('Ls: ', Ls)
-
-        # Bmirrors = [np.floor(2.591e+04 * (L ** -2.98)) for L in Ls]
-        # print('Bmirrors: ', Bmirrors)
-
-        # User inputs time,X,Y,Z,pitch angles
-        # Create the right json input structure
-        url = "http://172.17.0.4:5000/api/magephem"
-        json_input = {
+        # User inputs date/time, x,y,z and pitch angles
+        # Create the right json input structure for magephem request
+        magephem_input = {
             # list of dates in YYYY-MM-DDTHH:MM:SS.mmm(uuu)Z format
             # example: ["2022-01-10T17:05:00.967250Z", "2022-01-10T18:18:00.967250Z"]
             "dates": io_data["time"],
+
             # list of input 3-D coordinate sets (nested list)
             # example: [[1,2,3],[4,5,6]]
             "X": io_data["xyz"],
+
             # scalar input pitch angle
             # example: [10.0, 45.0, 90.0]
             "alpha": io_data["pitch_angles"],
             "kext": "opq",
             "sys": "GDZ",
-            "outputs": ["I", "Bm", "L"]
+            "outputs": ["Bm", "L"]
         }
 
-        # Convert into json
-        # json_input = json.dumps(data_input)
-
-        print('input: ', json_input)
-        print('url: ', url)
-
-        # Change X,Y,Z to Ls, Bm using magephem and python requests
+        # Convert x,y,z to Ls, Bm using magephem request:
         # (time1,x1,y1,z1) -> (L1,Bm1)
         # (time2,x2,y2,z2) -> (L2,Bm2)
         # The output json structure will have L and Bm for each time
-
         try:
-            data_output = requests.post(url, json=json_input).json()
-            print('data_output: ', data_output)
+            magephem_response = requests.post(url, json=magephem_input).json()
+            print('magephem_response: ', magephem_response)
         except Exception as e:
             print('e : ', e)
 
-        # parse output, the result is a Python dictionary
-        # data_output = json.loads(output)
-
-        output = pi.process_data(io_data["time"], data_output["L"], data_output["Bm"], io_data["energies"])
-        #output = pi.process_data(time, Ls, Bmirrors, energies)
+        output = pi.process_data(io_data["time"], magephem_response["L"], magephem_response["Bm"], io_data["energies"])
 
         # Pretty-Print JSON
         json_output = {**io_data, "json_output": output}
