@@ -28,7 +28,7 @@ from spacepy import time
 from spacepy.irbempy import get_Lstar
 import spacepy as sp
 import sqlite3 as sl
-#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
 from scipy.interpolate import NearestNDInterpolator
 #import data_utils as du
@@ -1064,6 +1064,7 @@ def write_shells_netcdf(outdir, outdat, fname,modelname=None):
 
             # Create the dimensions
             # Flux variables are time X L, Kp and Kpmax are time,
+            # The dimensions here are L and time
             for dim in outdat['dims']:
                 if dim=='time':
                     sat_data.createDimension(dim, None)
@@ -1079,15 +1080,27 @@ def write_shells_netcdf(outdir, outdat, fname,modelname=None):
 
             for key in allvars:
                 print(key)
+                # Create the variables for all columns but the time,L and dims
                 if key not in list(outdat['dims']+['dims']):
                     vdims = np.shape(outdat[key])
                     if len(vdims)>1:
+                        # All the flux data will have dimensions timeXL
                         sat_data.createVariable(key, np.float64, tuple(outdat['dims']))
                     elif len(vdims)==1:
-                        # Does it mathc time or Lshell
+                        # This will be  Energies, or Bmirrors,Kpvals
+                        # JGREEN 5/6/23 Changed this so that it works for Energies and Bmirrors
+                        # Check if it has the len of one of the dims
+                        ldims = []
                         for dim in outdat['dims']:
-                            if vdims[0]==len(outdat[dim]):
-                                sat_data.createVariable(key, np.float64, (dim))
+                            ldims= ldims+[len(outdat[dim])]
+                        # Energies shouldn't be tied to L so leav it out here
+                        if (len(outdat[key]) in ldims) & (key!='Energies') :
+                            #If the len of the variable matches a dimension then give it that dim
+                            sat_data.createVariable(key, np.float64, (outdat['dims'][ldims.index(len(outdat[key]))]))
+                        else:
+                            # Otherwise create a new one
+                            newdim= sat_data.createDimension(key, len(outdat[key]))
+                            sat_data.createVariable(key, np.float64, (key))
 
             # Create the sat variable so you know which satellite pass it was from
             sat_data.createVariable('sat', str, ('time'))
@@ -1149,16 +1162,18 @@ def write_shells_netcdf(outdir, outdat, fname,modelname=None):
 
             # Now translate that into the data that we want
             for key in allvars:
-                if key not in list(outdat['dims'] + ['dims']):
-                    temp_data = outdat[key][tinds]
-                    if len(np.shape(temp_data))>1:
-                        alldat = np.append(old_data[key][:], temp_data, axis=0)
-                        sat_data[key][:] = alldat[order_args[good_inds]]
+                # 05/08/2023 had to change this because the neural data has Bmirrors and
+                # Energies. Don't write them again or time L
+                if key not in list(outdat['dims'] + ['dims']+['Energies','Bmirrors','sat']):
+                    print(key)
+                    #Check if it is an array or list
+                    if type(outdat[key])==list:
+                        temp_data = [outdat[key][t] for t in tinds]
                     else:
-                        temp_data = [outdat[Kval][t] for t in tinds]
-                        alldat = np.append(old_data[Kval][:], temp_data, axis=0)
-                        sat_data[Kval][:] = alldat[order_args[good_inds]]
-
+                        temp_data = outdat[key][tinds]
+                
+                    alldat = np.append(old_data[key][:], temp_data, axis=0)
+                    sat_data[key][:] = alldat[order_args[good_inds]]
             # Now set the time variable
             temp_data = [outdat['time'][t] for t in tinds]
             alldat = np.append(old_data['time'][:], temp_data, axis=0)
@@ -1166,19 +1181,27 @@ def write_shells_netcdf(outdir, outdat, fname,modelname=None):
 
             # Need the sat variable
             fval = 'sat'
-            temp_data = np.array([sat] * len(tinds))
+            temp_data = np.array([outdat[fval]] * len(tinds))
             alldat = np.append(old_data[fval][:], temp_data, axis=0)
             sat_data[fval][:] = alldat[order_args[good_inds]]
 
         else:
             # Just Create the file with the new data
+
             sat_data['time'][:] = new_times
             # Create the flux vars
             for key in allvars:
-                if key not in list(outdat['dims'] + ['dims']):
+                print(key)
+                # Write all the flux variables
+                if key not in list(outdat['dims'] + ['dims'] +['Bmirrors','Energies','sat']):
                     sat_data[key][:] = np.array([outdat[key][x] for x in tinds])
-
-            sat_data['sat'][:] = np.array([sat] * len(tinds))
+                if key in ['Bmirrors','Energies','L']:
+                    # These are separate because there is no time component
+                    sat_data[key][:] = np.array(outdat[key][:])
+                # Create the sat variable
+                if key =='sat':
+                    sat_data[key][:] = np.array([outdat[key]] * len(tinds))
+            
 
         sat_data.close()
 
@@ -1226,7 +1249,7 @@ def write_shells_dbase(outdir,outdat,cdict):
     fstart = outdat['time'][0]
     fdate = pu.unix_time_ms_to_datetime(fstart)  # Change to datetime
     fedate = pu.unix_time_ms_to_datetime(outdat['time'][-1])
-    dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
+    dformat = '%Y-%m-%dT%H:%M:%S.000Z'
 
     # Get just the eflux columns
     fcols = [x for x in list(outdat.keys()) if 'flux' in x]
@@ -1333,7 +1356,7 @@ def write_shells_text(outdir, outdat, fname, otype):
     fstart = outdat['time'][0]
     fdate = pu.unix_time_ms_to_datetime(fstart) # Change to datetime
     fedate = pu.unix_time_ms_to_datetime(outdat['time'][-1])
-    dformat ='%Y-%m-%dT%H:%M:%S.%fZ'
+    dformat ='%Y-%m-%dT%H:%M:%S.000Z'
 
     # Get just the eflux columns
     fcols = [x for x in list(outdat.keys()) if 'flux' in x]
