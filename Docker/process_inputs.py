@@ -1,8 +1,8 @@
 import logging
 import os
 import sqlite3 as sl
-from bisect import bisect_left
-
+from bisect import bisect_right
+from flask import current_app
 import keras
 import numpy as np
 from joblib import load
@@ -18,29 +18,45 @@ def qloss(y_true, y_pred):
 
 def get_nearest(list_dt, dt):
     """
-    Assumes list_dt is sorted. Returns nearest value to dt.
+    Assumes list_dt is sorted. Returns nearest position to dt.
+
+    bisect_left gives the index where the value will be inserted
+    so the value of data we want is that index -1
+    However, if the times are identical then it gives the index to
+    the left
+
     """
-    pos = bisect_left(list_dt, dt)
+
+    pos = bisect_right(list_dt, dt)
+
 
     if pos == 0:
-        return list_dt[0]
+        return 0
     if pos == len(list_dt):
-        return list_dt[-1]
+        return len(list_dt)-1
 
-    return list_dt[pos - 1]
+    return pos-1
 
 
 def read_db_inputs(sdate, edate):
+    '''
+    PURPOSE: to get the shellss data inputs from an sqlite dbase for testing
+    :param sdate: start time for requested data
+    :param edate: end time for requested data
+    :return:
+    '''
     conn = None
     names = None
     rows = None
 
     try:
-        # Connect to the dbase
-        conn = sl.connect('./resources/test_sehas_shells.sq')
+        # Connect to the sqlite dbase
+        dbase = os.path.join(os.path.dirname( __file__ ), 'resources/test_sehas_shells.sq')
+        conn = sl.connect(dbase)
         cursor = conn.cursor()
 
         # Read in the SHELLS input data for the range of times passed by the user
+        # and also get the last time prior to the start date
         cursor.execute(
             "SELECT * FROM ShellsInputsTbl "
             "WHERE (time BETWEEN ? AND ?) "
@@ -69,42 +85,63 @@ def read_db_inputs(sdate, edate):
 
 
 def read_db_inputs_2(req_times):
+    '''
+
+    :param req_times: list of times requeted by user
+    :return:
+    '''
     conn = None
     names = None
     rows = None
 
     try:
         # Connect to the dbase
-        conn = sl.connect('./resources/test_sehas_shells.sq')
+        #print("Connecting to dbase")
+        # Todo make this a parameter in the config
+        dbname = 'test_sehas_shells.sq'
+        dbase = os.path.join(os.path.dirname( __file__ ), 'resources',dbname)
+        print(dbase)
+        #conn = sl.connect('./resources/test_sehas_shells.sq')
+        conn = sl.connect(dbase)
         cursor = conn.cursor()
 
-        # Read in the SHELLS input data for the range of times passed by the user
+        # Read the SHELLS input times for the range of times passed by the user
+        mtime = '2022-01-02T22:31:50.327000Z'
         cursor.execute(
-            "SELECT time FROM ShellsInputsTbl "
-            "WHERE (time BETWEEN ? AND ?) "
-            "OR time = (SELECT MAX(time) FROM ShellsInputsTbl WHERE time < ?) "
+            "SELECT * FROM ShellsInputsTbl "
+            "WHERE (time >= ? AND time <= ?) "
+            "OR time = (SELECT MAX(time) FROM ShellsInputsTbl WHERE time <= ?) "
             "ORDER BY time", (min(req_times), max(req_times), min(req_times)))
-        input_times = [item[0] for item in cursor.fetchall()]
+        rows1 = cursor.fetchall()
+        input_times = [item[0] for item in rows1]
+        #print('input times: ', input_times)
 
-        # Find the input poes data nearest to the requested times in the CCMC HAPI database
-        nearest_times = [get_nearest(input_times, t) for t in req_times]
+        # Find the input poes position nearest to the requested times in the CCMC HAPI database
+        nearest_pos = [get_nearest(input_times, t) for t in req_times]
+        #print(nearest_pos)
 
-        print('req times: ', req_times)
-        print('input times: ', input_times)
-        print('nearest times: ', nearest_times)
+        rows = [rows1[x] for x in nearest_pos]
+
+        # Get the actual times to make sure it works right
+        nearest_times = [input_times[x] for x in nearest_pos]
+
+
+        #print('input times: ', input_times)
+        #print('request times: ', req_times)
+        #print('nearest times: ', nearest_times)
 
         # Read in the SHELLS input data for the range of nearest times
-        sql = "SELECT * FROM ShellsInputsTbl WHERE time IN ({seq})".format(seq=','.join(['?'] * len(nearest_times)))
-        cursor.execute(sql, nearest_times)
-        rows = cursor.fetchall()
+        #sql = "SELECT * FROM ShellsInputsTbl WHERE time IN ({seq})".format(seq=','.join(['?'] * len(nearest_times)))
+        #cursor.execute(sql, nearest_times)
+        #rows = cursor.fetchall()
 
         # Get the column names
         names = [description[0] for description in cursor.description]
         # print(names)
 
         # Get the column number
-        cursor.execute("SELECT COUNT(*) FROM pragma_table_info('ShellsInputsTbl')")
-        count = cursor.fetchall()
+        #cursor.execute("SELECT COUNT(*) FROM pragma_table_info('ShellsInputsTbl')")
+        #count = cursor.fetchall()
         # print(count[0][0])
 
         if conn is not None:
@@ -117,23 +154,64 @@ def read_db_inputs_2(req_times):
 
     return names, rows
 
+def reorg_data(keys,rows,channels):
+    # List of the channels
+
+    # Initialize map_data
+    map_data = {}
+    time_arr = []
+    e1_arr, e2_arr, e3_arr, e4_arr = [], [], [], []
+    Kp10, Kp_max = [], []
+
+    for i in range(len(rows)):
+        time_arr.append(rows[i][keys.index("time")])
+
+        # zip function takes elements of input tuple 1 as keys and input tuple 2 elements as values
+        # Then we convert this to a dictionary using dict()
+        row = dict(zip(keys, rows[i]))
+
+        e1_arr.append([value for key, value in row.items() if '_e1_' in key])
+        e2_arr.append([value for key, value in row.items() if '_e2_' in key])
+        e3_arr.append([value for key, value in row.items() if '_e3_' in key])
+        e4_arr.append([value for key, value in row.items() if '_e4_' in key])
+
+        Kp10.append(row['Kp*10'])
+        Kp_max.append(row['Kp_max'])
+
+    map_data['time'] = np.array(time_arr)
+    map_data['mep_ele_tel90_flux_e1'] = np.array(e1_arr)
+    map_data['mep_ele_tel90_flux_e2'] = np.array(e2_arr)
+    map_data['mep_ele_tel90_flux_e3'] = np.array(e3_arr)
+    map_data['mep_ele_tel90_flux_e4'] = np.array(e4_arr)
+    map_data['Kp*10'] = Kp10
+    map_data['Kp_max'] = Kp_max
+
+    return map_data
+
+
 
 def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, Bmirrors=None, Energies=None):
     '''
-    PURPOSE: To take the values in data, apply the neural network from Alex and
-    then output the near equatorial flux
+    PURPOSE: To take the values in data, apply the shells neural network and
+    then output the electron flux
+
     :param data (dict): Dict with data[ecol][timeXL] for each of the 4 POES energy channels
-    :param evars (list): List of the energy channel names
+    :param evars (list): List of the energy channel names for POES
     :param Kpdata (list): List of Kp*10 for each time
     :param Kpmax_data (list):List of Kp*10_max_3d for each time
     :param out_scale (str): Name of the output transform file for the NN
     :param in_scale (str): Name of the input transform file for the NN
     :param hdf5 (str): Name of file used by the NN
+    :param L (list(list)): list of single L values for each xyz or a fixed set for every time
+    :param Bmirrors (list(list)): list of Bmirrors for every time step or a fixed set
+    :param Energies (list): list of electron energies to return
     :return:
     '''
 
     # List of energies we want for the output data
+    #print(" Doing nn")
     if Energies is None:
+        # If no Energies are passed it assumes this
         Energies = np.arange(200.0, 3000.0, 200.0)
 
     # The Bmirror values for the output at each l
@@ -146,7 +224,9 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
         L = np.arange(3., 6.3, 1)
 
     # Check for -1 where L>7.5
-    # Sometimes this happens because the orbit does not go out that far
+    # Sometimes this happens in the input data because the POES orbit does not
+    # go out very far. In that case, set it to neighboring values
+    # Step through each energy channel
     for wco in range(0, len(evars)):
         bad_inds = np.where((data[evars[wco]][:]) < 0)
         if len(bad_inds[0]) > 0:
@@ -156,62 +236,90 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                     bad_inds[1][bco] - 1]
 
     # Todo need to deal with bad data
-    # My data has timeXL for each energy in a dict
-    # This expected input is timeXL e1, timeXL e2 timeXL e3, timeXL e4
-
-    # This concatetnates the fluxes at each energy into one array
+    # The input data has timeXL for each energy in a dict
+    # The expected input for the nn is timeXL e1, timeXL e2 timeXL e3, timeXL e4
+    # So need to concatentate into one  array
     new_dat = np.array(data[evars[0]][:])
     for wco in range(1, len(evars)):
         new_dat = np.append(new_dat, data[evars[wco]], axis=1)
 
     l, w = np.shape(new_dat)
 
-    # What do we want as output if we are going to make a netcdf file
+    # Output needed if we are going to make a netcdf file
     # data[E][time x L] at Beq for that L
     # data[E1_upperq] [timeXL] upper quantile
     # data[E1_lowerq] [timexL] lower quantile
 
     # Create a dict for the output data
     outdat = {}
-    outdat['L'] = L
-    outdat['Bmirrors'] = Bmirrors
-    outdat['Energies'] = Energies
-    # Then create arrays for each E and E quantiles
-    for E in Energies:
-        col = 'E flux ' + str(int(E))
-        outdat[col] = np.zeros((0, len(L)), dtype=np.float)
-        colh = 'E flux ' + str(int(E)) + ' upper q'
-        outdat[colh] = np.zeros((0, len(L)), dtype=np.float)
-        coll = 'E flux ' + str(int(E)) + ' lower q'
-        outdat[coll] = np.zeros((0, len(L)), dtype=np.float)
-    outdat['time'] = list()
-    outdat['Kp'] = list()
-    outdat['Kpmax'] = list()
+    outdat['L'] = L # This could be 1D or 2D
+    outdat['Bmirrors'] = Bmirrors # This could be 1d or 2d
+    outdat['Energies'] = Energies # This should be 1d
 
-    # Step through the POES passes one at a time
+    # Then create arrays for flux at each Energy and E quantiles
+
+    # Need to check if Bmirrors/Ls is 1D or 2d
+    # If its 2D then its an xyz request
+
+    if len(np.shape(Bmirrors))>1:
+        Bl, Bw = np.shape(Bmirrors) #(2D)
+    else:
+        Bw = len(Bmirrors) #1D
+
+    # Define the output columns
+    for E in Energies:
+        # I changed this so that the output will be timeXBmirrors (or pitch angles)
+        col = 'E flux ' + str(int(E))
+        outdat[col] = np.zeros((0, Bw), dtype=np.float)
+        colh = 'E flux ' + str(int(E)) + ' upper q'
+        outdat[colh] = np.zeros((0, Bw), dtype=np.float)
+        coll = 'E flux ' + str(int(E)) + ' lower q'
+        outdat[coll] = np.zeros((0, Bw), dtype=np.float)
+
+    outdat['time'] = list() # same times will be returned except bad data
+    outdat['Kp'] = list() # same Kp will be returned
+    outdat['Kpmax'] = list() # same Kpmax will be returned
+
+    # Step through each time step in the input data and do the nn
     for pco in range(0, l):
         # The input needs Kp, Kpmax, E, Bmirror for each L
-        # Check that the poes input does not have Nans
+        # Check that the input data does not have Nans
         check_dat = np.where((np.isnan(new_dat[pco][:])) | (new_dat[pco][:] < 0))[0]
 
         if len(check_dat) < 1:
+            # Append the current value to the outdat list
             outdat['time'].append(data['time'][pco])
             outdat['Kp'].append(Kpdata[pco] / 10)
             outdat['Kpmax'].append(Kpmax_data[pco] / 10)
 
-            # The NN code can calculate flux for all Ls at once
-            kp = np.tile(Kpdata[pco], len(L))  # Create a list of Kp for each L calc
-            maxkp = np.tile(Kpmax_data[pco], len(L))  # Create a list of maxKp for each L
-            # Create a list of POES data to be used for each L calc
-            poes = np.tile(new_dat[pco:pco + 1], (len(L), 1))
+            # The NN code can calculate flux for all Ls/Bm at once
+            kp = np.tile(Kpdata[pco], Bw)  # Create a list of Kp for each Bmirror
+            maxkp = np.tile(Kpmax_data[pco], Bw)  # Create a list of maxKp for each Bmirror
+            # Create a list of POES data to be used for each Bmirror calc
+            poes = np.tile(new_dat[pco:pco + 1], (Bw, 1))
 
-            # Step through each energy and create outdat[Ecol] that is len L
+            # Check if Bmirrors is 2D or 1D
+            if len(np.shape(Bmirrors))>1:
+                Bthis = Bmirrors[pco]
+            else:
+                Bthis = Bmirrors
+
+            # Check if L is 2D or 1D
+            if len(np.shape(L))>1:
+                Lthis = L[pco]
+            else:
+                Lthis = L
+
+            # If there is just one L then need to repeat it for each Bmirror
+            if len(Lthis) != len(Bthis):
+                Lthis = np.tile(Lthis, Bw)
+
+            # Step through each energy and create outdat[Ecol] that is len Bmirror
             for eco in range(0, len(Energies)):
-                # Make a list of one energy at all L's
-                energy = np.tile(Energies[eco], len(L))
-                # The Bmirror is different for each L
-                input = np.concatenate((np.array(energy).reshape(-1, 1), np.array(Bmirrors).reshape(-1, 1),
-                                        np.array(L).reshape(-1, 1), np.array(kp).reshape(-1, 1),
+                # Make a list of one energy at all Bm's
+                energy = np.tile(Energies[eco], Bw)
+                input = np.concatenate((np.array(energy).reshape(-1, 1), np.array(Bthis).reshape(-1, 1),
+                                        np.array(Lthis).reshape(-1, 1), np.array(kp).reshape(-1, 1),
                                         np.array(maxkp).reshape(-1, 1),
                                         poes), axis=1)
                 # This returns the lowerq, log(flux), upperq data for one E and Bmirror(L) at each L
@@ -223,67 +331,70 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                         'E flux ' + str(int(Energies[eco])),
                         'E flux ' + str(int(Energies[eco])) + ' lower q', ]
                 for cco in range(0, len(cols)):
-                    temp = outdat[cols[cco]][:]
+                    # Todo check if this works for multiple Bms
+                    # If there is multiple Bms then each energy channel will be [timeXBm]
+                    temp = outdat[cols[cco]][:] # Get the current data for that energy col
                     outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
 
     return outdat
 
 
 def process_data(time, Ls, Bmirrors, Energies):
+    '''
+    # PURPOSE: To translate the input data into shells electron flux
+    # First it gets the input POES data for the sleected time from
+    # the NASA HAPI server or from an sqlite dbase (testing)
+    :param time (list):
+    :param Ls (list 1D or 2D):
+    :param Bmirrors (list 1D or 2D):
+    :param Energies (list):
+    :return:
+    '''
+
     # Create a dict for the output data
     outdat = {}
 
     try:
-        # ---------------- Set up mapping info -------------------
 
         # --------------------- Set up nn ------------------------
         # Load in transforms, model for Neural Network.
-        # They are always a trio of files: in_scale, out_scale binary files and a model_quantile HDF5 file.
+        # Its always a trio of files: in_scale, out_scale binary files
+        # and a model_quantile HDF5 file.
 
+        print(os.environ.get('OUT_SCALE_FILE'))
         out_scale = load(os.environ.get('OUT_SCALE_FILE'))
         in_scale = load(os.environ.get('IN_SCALE_FILE'))
         hdf5 = keras.models.load_model(os.environ.get('HDF5FILE'), custom_objects={'loss': qloss}, compile=False)
 
-        # out_scale = load("./resources/out_scale_final_09242021.bin")
-        # in_scale = load("./resources/in_scale_final_09242021.bin")
-        # hdf5 = keras.models.load_model("./resources/shells_model_final_v6_09242021.h5", custom_objects={'loss': qloss}, compile=False)
-
-        keys, rows = read_db_inputs_2(time)
-        # keys, rows = read_db_inputs(sdate, edate)
-
-        # List of the channels
+        # These are the POES electron fluxchannel names
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
 
-        # Initialize map_data
-        map_data = {}
-        time_arr = []
-        e1_arr, e2_arr, e3_arr, e4_arr = [], [], [], []
-        Kp10, Kp_max = [], []
+        if current_app.testing==True:
+            # In testing mode read the poes data from an sqlite dbase
+            keys, rows = read_db_inputs_2(time)
+            # This reorganizes the data from the dbase
+            map_data = reorg_data(keys,rows,channels)
+        else:
+            # Todo This should read from CCMC HAPI dbase
+            # In testing mode read the data from an sqlite dbase
+            keys, rows = read_db_inputs_2(time)
+            # This reorganizes the data from the dbase
+            map_data = reorg_data(keys, rows, channels)
 
-        for i in range(len(rows)):
-            time_arr.append(rows[i][keys.index("time")])
+        #print('Doing nn')
+        # Before we were calling the nn with a fixed set of Ls, and Bmirrors
+        # for every time stamp that were passed with L=Ls and Bmirrors = Bmirros.
+        # Now we call it with a different L for every time step
+        # And different Bmirrors (timeX pitch angles)
+        # We might still want the ability to pass a fixed set of Ls and Bmirrors
+        # To do that we check if Ls is 1D or 2D in run_nn
+        # The way the call to magephem works, this will always return a 2D array
+        # for Ls and Bmirrors
 
-            # zip function takes elements of input tuple 1 as keys and input tuple 2 elements as values
-            # Then we convert this to a dictionary using dict()
-            row = dict(zip(keys, rows[i]))
-
-            e1_arr.append([value for key, value in row.items() if '_e1_' in key])
-            e2_arr.append([value for key, value in row.items() if '_e2_' in key])
-            e3_arr.append([value for key, value in row.items() if '_e3_' in key])
-            e4_arr.append([value for key, value in row.items() if '_e4_' in key])
-
-            Kp10.append(row['Kp*10'])
-            Kp_max.append(row['Kp_max'])
-
-        map_data['time'] = np.array(time_arr)
-        map_data['mep_ele_tel90_flux_e1'] = np.array(e1_arr)
-        map_data['mep_ele_tel90_flux_e2'] = np.array(e2_arr)
-        map_data['mep_ele_tel90_flux_e3'] = np.array(e3_arr)
-        map_data['mep_ele_tel90_flux_e4'] = np.array(e4_arr)
-
-        print('Doing nn')
-        outdat = run_nn(map_data, channels, Kp10[:], Kp_max[:], out_scale, in_scale, hdf5, L=Ls, Bmirrors=Bmirrors,
+        outdat = run_nn(map_data, channels, map_data['Kp*10'], map_data['Kp_max'],
+                        out_scale, in_scale, hdf5, L=Ls, Bmirrors=Bmirrors,
                         Energies=Energies)
+
         print('Done with nn')
 
     except Exception as e:
