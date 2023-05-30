@@ -57,7 +57,7 @@ def test_request_example2(client):
     app = create_app(test_config="test_config")
 
     #data = ddict
-    response = app.test_client().post("/shells",data=data,content_type='application/json')
+    response = app.test_client().post("/shells_io",data=data,content_type='application/json')
 
     # Now we have to compare test_data for the same L and energy
     # Get the right index for the L value we fixed in the app
@@ -122,7 +122,7 @@ def test_request_with_multiple_Bmirrors(client):
     app = create_app(test_config="test_config")
 
     #data = ddict
-    response = app.test_client().post("/shells",data=data,content_type='application/json')
+    response = app.test_client().post("/shells_io",data=data,content_type='application/json')
     # Now we have to compare test_data for the same L and energy
     # Get the right index for the L value we fixed in the app
     # Todo figure out how to set this directory
