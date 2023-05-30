@@ -11,13 +11,41 @@ from schemas import InSchema
 
 blp = Blueprint("I/O", __name__, description="Operations for the shells model")
 
-@blp.route("/shells")
+@blp.route("/shells_io")
 class IOList(MethodView):
     @blp.arguments(InSchema)
     @blp.response(201)
     # InSchema is defined in schema.py
     # There is no fixed output schema in blp.response because the output varies
     def post(self, io_data):
+        """Provides electron flux from the SHELLS model
+
+        Returns electron flux from the SHELLS model for input times, locations,
+        local pitch angles, and energies<br>
+        Required inputs:<br>
+        - time: list of dates and times with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
+        - xyz: list of 3-D locations for each time
+        - sys: coordinate system for xyz locations
+            + Supports GDZ, GEO, GSM, GSE, SM, GEI, MAG, SPH.
+            + GDZ - geodetic as alt (km), latitude (deg), longitude (deg).
+            + GEO - Cartesian geographic (RE).
+            + GSM - Cartesian geocentric solar magnetospheric (RE).
+            + SM - Cartesian solar magnetospheric (RE).
+            + GEI - Cartesian geocentric Earth inertical (RE).
+            + MAG - Cartesian magnetic.
+            + SPH - Spherical geographic coordinates as radius (RE), latitude (deg), longitude (deg).
+        - pitch_angles: 1-D list of local pitch angles for the returned electron flux
+        - energies: 1-D list of energies (keV) for the returned electron flux<br>
+        <br>
+        Outputs: (dictionary of arrays)
+        The keys of the dictionary correspond to electron flux for each energy requested
+        along with the upper and lower quartiles<br>
+        Example keys:<br>
+        - 'E flux 500': [timeX pitch_angles]
+        - 'E flux 500 upper': [timeX pitch_angles]
+        - 'E flux 500 lower': [timeX pitch_angles]
+        """
+
         # The post method takes times, locations, pitch angles in io_data,
         # changes them to magnetic coordinates using magephem service
         # It calls process_data (in process_inputs.py) that gets the shells inputs
@@ -29,6 +57,7 @@ class IOList(MethodView):
         # 2) list of [x,y,z] for those times (ex [[3,1,1],[3,1,2]])
         # 3) list of energies (to be used for all times) (ex [200,400,600] in keV)
         # 4) list of pitch angles (to be used for all times) (ex [[20,40]])
+        # 5) sys coordinate system
         # Todo: Later we will likely update this so you can pass Ls and Bms
         # instead of xyz and pitch angles
 
@@ -47,6 +76,7 @@ class IOList(MethodView):
                 # list of input 3-D coordinate sets (nested list)
                 # example: [[1,2,3],[4,5,6]]
                 "X": io_data["xyz"],
+                "sys": io_data["sys"],
 
                 # scalar input pitch angle
                 # example: [10.0, 45.0, 90.0]
@@ -60,7 +90,6 @@ class IOList(MethodView):
                 # Todo check what kext should be
                 "alpha": [io_data["pitch_angles"]],
                 "kext": "opq",
-                "sys": io_data["sys"],
                 "outputs": ["Bm", "L"]
             }
 
@@ -109,7 +138,7 @@ class IOList(MethodView):
         # Todo figure out what exactly should be output other than flux
         # output has time, L, E flux 200, etc
 
-        # return the user reqested pitch angles
+        # return the user reqested pitch angles as well
         output['pitch_angles']= io_data["pitch_angles"]
 
         # Write Pretty-Print JSON data to file
