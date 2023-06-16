@@ -6,6 +6,7 @@ from flask import current_app
 import keras
 import numpy as np
 from joblib import load
+from flask import current_app
 
 
 def qloss(y_true, y_pred):
@@ -40,7 +41,7 @@ def get_nearest(list_dt, dt):
 
 def read_db_inputs(sdate, edate):
     '''
-    PURPOSE: to get the shellss data inputs from an sqlite dbase for testing
+    PURPOSE: to get the shells data inputs from an sqlite dbase for testing
     :param sdate: start time for requested data
     :param edate: end time for requested data
     :return:
@@ -98,7 +99,9 @@ def read_db_inputs_2(req_times):
         # Connect to the dbase
         #print("Connecting to dbase")
         # Todo make this a parameter in the config
-        dbname = 'test_sehas_shells.sq'
+        dbname =os.environ.get('DBNAME')
+        #print(dbname)
+        #dbname = 'test_sehas_shells.sq'
         dbase = os.path.join(os.path.dirname( __file__ ), 'resources',dbname)
         print(dbase)
         #conn = sl.connect('./resources/test_sehas_shells.sq')
@@ -341,9 +344,10 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
 
 def process_data(time, Ls, Bmirrors, Energies):
     '''
-    # PURPOSE: To translate the input data into shells electron flux
+    # PURPOSE: Translates input data into shells electron flux
     # First it gets the input POES data for the sleected time from
     # the NASA HAPI server or from an sqlite dbase (testing)
+    #
     :param time (list):
     :param Ls (list 1D or 2D):
     :param Bmirrors (list 1D or 2D):
@@ -358,10 +362,10 @@ def process_data(time, Ls, Bmirrors, Energies):
 
         # --------------------- Set up nn ------------------------
         # Load in transforms, model for Neural Network.
-        # Its always a trio of files: in_scale, out_scale binary files
-        # and a model_quantile HDF5 file.
+        # Always a trio of files: in_scale, out_scale binary files
+        # and a model_quantile HDF5 file. All are defined in .env
 
-        print(os.environ.get('OUT_SCALE_FILE'))
+        #print(os.environ.get('OUT_SCALE_FILE'))
         out_scale = load(os.environ.get('OUT_SCALE_FILE'))
         in_scale = load(os.environ.get('IN_SCALE_FILE'))
         hdf5 = keras.models.load_model(os.environ.get('HDF5FILE'), custom_objects={'loss': qloss}, compile=False)
@@ -369,6 +373,7 @@ def process_data(time, Ls, Bmirrors, Energies):
         # These are the POES electron fluxchannel names
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
 
+        # Check if testing or no
         if current_app.testing==True:
             # In testing mode read the poes data from an sqlite dbase
             keys, rows = read_db_inputs_2(time)
