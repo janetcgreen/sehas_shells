@@ -27,7 +27,7 @@ jobs:
       - name: Set up Python 3.9
         uses: actions/setup-python@v3
         with:
-          python-version: "3.9"   # install the python version
+          python-version: "3.9.17"   # install the python version
         
       - name: Install Python packages
         run: |
