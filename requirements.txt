@@ -8,3 +8,5 @@ hapiclient==0.2.5
 protobuf==3.19.6
 tensorflow==2.7.0
 keras==2.7.0
+pytest==7.3.1
+flask-smorest==0.42.0
