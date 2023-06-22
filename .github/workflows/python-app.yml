@@ -24,7 +24,7 @@ jobs:
       #- uses: actions/checkout@v3
       - uses: nschloe/action-cached-lfs-checkout@v1
 
-      - name: Set up Python 3.9
+      - name: Set up Python 3.9.17
         uses: actions/setup-python@v3
         with:
           python-version: "3.9.17"   # install the python version
@@ -56,3 +56,7 @@ jobs:
           export PYTHONPATH=../src
           cd tests
           python test_process_SHELLS_inputs.py
+          
+          cd ../Docker/tests/
+          pytest test_shells_api.py
+          
