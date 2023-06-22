@@ -54,6 +54,9 @@ jobs:
       - name: Run a one-line script
         run: |
           export PYTHONPATH=../src
-          python tests/test_process_SHELLS_inputs.py
-          pytest Docker/tests/test_shells_api.py
+          cd tests
+          #python test_process_SHELLS_inputs.py
+          
+          cd ../Docker/tests/
+          pytest test_shells_api.py
           
