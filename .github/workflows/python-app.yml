@@ -57,6 +57,6 @@ jobs:
           #cd tests
           #python test_process_SHELLS_inputs.py
           export PYTHONPATH=../Docker
-          cd tests/
+          cd Docker/tests/
           pytest test_shells_api.py
           
