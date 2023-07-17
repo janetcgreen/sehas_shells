@@ -273,11 +273,11 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     for E in Energies:
         # I changed this so that the output will be timeXBmirrors (or pitch angles)
         col = 'E flux ' + str(int(E))
-        outdat[col] = np.zeros((0, Bw), dtype=np.float)
+        outdat[col] = np.zeros((0, Bw), dtype=float)
         colh = 'E flux ' + str(int(E)) + ' upper q'
-        outdat[colh] = np.zeros((0, Bw), dtype=np.float)
+        outdat[colh] = np.zeros((0, Bw), dtype=float)
         coll = 'E flux ' + str(int(E)) + ' lower q'
-        outdat[coll] = np.zeros((0, Bw), dtype=np.float)
+        outdat[coll] = np.zeros((0, Bw), dtype=float)
 
     outdat['time'] = list() # same times will be returned except bad data
     outdat['Kp'] = list() # same Kp will be returned
