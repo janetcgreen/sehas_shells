@@ -6,5 +6,9 @@ boto3==1.24.28
 mysql.connector==2.2.9
 hapiclient==0.2.5
 protobuf==3.19.6
-tensorflow==2.7.0
-keras==2.7.0
+tensorflow==2.10.0
+keras==2.10.0
+pytest==7.3.1
+flask-smorest==0.41.0
+python-dotenv==0.21.0
+scikit-learn==1.2.1
