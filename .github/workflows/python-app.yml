@@ -53,9 +53,9 @@ jobs:
       # Runs a single command using the runners shell
       - name: Run a one-line script
         run: |
-          #export PYTHONPATH=../src
-          #cd tests
-          #python test_process_SHELLS_inputs.py
+          export PYTHONPATH=../src
+          cd tests
+          python test_process_SHELLS_inputs.py
           export PYTHONPATH=../Docker
           cd Docker/tests/
           pytest test_shells_api.py
