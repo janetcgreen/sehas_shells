@@ -26,9 +26,9 @@ import keras
 from spacepy import coordinates as coord
 from spacepy import time
 from spacepy.irbempy import get_Lstar
-import spacepy as sp
+from scipy.stats import gengamma
 import sqlite3 as sl
-sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
 from scipy.interpolate import NearestNDInterpolator
 #import data_utils as du
@@ -619,6 +619,175 @@ def map_poes(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_ey
     sar_sat.close()
 
     return map_data
+def map_poes_fits(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, ref_eyear):
+    '''
+    PURPOSE: To take the pass and L binned data from POES and map it to
+    a consistent longitude for the shells neural network to read
+
+    This version reads cdf files that have generalized gamma fit parameters
+    Instead of the whole cdf
+
+    :param data (dict) Data binned by pass and L
+    :param evars (list) the electron flux channels to process
+    :param sat (str) the satellite to process
+    :param satref (str) the ref satellite to use (m02)
+    :param refind (int) the index of the reference longitude
+    :param cdf_dir (str) the directory to look for the cdf files
+    :param year (int) the year to process
+    :param ref_syear (int) the start year for the ref sat of the cdf file to use 2014
+    :param ref_eyear the end year for the ref sat of the cdf files to use 2018
+
+    # Note this is expecting Kp*10
+    '''
+
+    # ----------------------------- Set some data for later --------------------------
+
+    Lbins = data['Lbins']
+
+    # The cdf fit data files have evars['hemi','NS','Lbin','lonbin','Kp','fits']
+    # hemi:  0,1 (for norht and south)
+    # NS: 0,1 (for north or south direction)
+    # Lbin: 1-8
+    # lonbin:
+    # Kp: 0-5
+    # fits: four parameters for the gen gamma a,c,loc and scale
+
+    # This will hold the final output of mapped data
+    map_data = {}
+    map_data['time'] = data['time_pass']
+
+    eyear_all = year # These are used to find the right cdf file
+    syear_all = eyear_all - 4
+
+    # JGREEN: 02/2023 I took these calculations out of the
+    # loop through the energy channels because they will be
+    # the independent of that
+
+    # Get the hemisphere
+    # JGREEN: data['lat'] was being overwritten for every channel
+    # so that hemi was just 0. this didn't happen in previous
+    # versions because data['lat'] was a netcdf variable
+    hemi = np.copy(data['lat'][:])
+    hemi[hemi >= 0] = 0  # Northern hemi
+    hemi[hemi < 0] = 1  # Southern hemi
+    hemi1 = hemi.astype(int)
+
+    # Get the NS direction
+    NSco = data['NS'][:]
+    NSco1 = NSco.astype(int)
+
+    # Get the lon bin
+    lon = np.floor(data['lon'][:] / 10)
+    lon1 = lon.astype(int) # This is so we can use it as an index
+    lon1[lon1 > 35] = 0  # If its exactly 360 deg it gets put in bin 0
+
+    Kp = np.floor(data['Kp*10'][:] / 10)
+    Kp1 = Kp.astype(int)
+    Kp1[Kp1>5] = 5 # We combine high kps for the cdf file
+    # Make Kp into an array that's duplicated for each Lbin
+    Kpvec = np.tile(Kp1, (len(Lbins), 1)).T
+
+    # Make an array of Ls
+    Ls = np.zeros((len(data['time_pass'][:]), len(Lbins)), dtype=int)
+
+    for lco in range(0, len(Lbins)):
+        Ls[:, lco] = Ls[:, lco] + lco
+
+    # The mapping tables are stored separately for each sat
+    # They used to be separate for each variable
+
+    # ------------------ Get the cdf files for mapping ------------------------------
+    # Get cdfs for current sat and variable
+    satsarfile = os.path.join(cdf_dir, sat, 'poes_cdf_' + sat + '_' + str(syear_all).zfill(4) \
+                              + '_' + str(eyear_all).zfill(4) + '.nc')
+    # Ideally, the process would use the cdf from the current year back 5
+    # But in real time it will always be one year behind because it takes a year
+    # to collect data.
+    # So if you don't find a file for the current year then look back one year
+    if ~os.path.exists(satsarfile):
+        newyear = eyear_all # eyear_all is the year of the data being processed
+        while (~os.path.exists(satsarfile)) & (newyear >= eyear_all - 2):
+            satsarfile = os.path.join(cdf_dir, sat, 'poes_cdf_' + sat + '_' + str(newyear - 4).zfill(4) + '_' \
+                                      + str(newyear).zfill(4) + '.nc')
+            newyear = newyear - 1
+    # But If you are reprocessing, then it may have to use cdfs from the future when the data
+    # starts, so try looking ahead if there is still no file
+    if ~os.path.exists(satsarfile):
+        newyear = eyear_all
+        while (~os.path.exists(satsarfile)) & (newyear <= eyear_all + 5):
+            satsarfile = os.path.join(cdf_dir, sat, 'poes_cdf_' + sat + '_' + str(newyear - 4).zfill(4) + '_' \
+                                      + str(newyear).zfill(4)  + '.nc')
+            newyear = newyear + 1
+    #satsarfile = '/Users/janet/PycharmProjects/SHELLS/cdfits2/n15/poes_cdf_n15_2015_2020.nc'
+    sar_sat = nc4.Dataset(satsarfile, 'r')
+    #print(satsarfile)
+
+    # Get cdfs fits for reference sat m02
+    srefile = os.path.join(cdf_dir, satref, 'poes_cdf_' + satref + '_' + str(ref_syear).zfill(4) + '_' \
+                           + str(ref_eyear).zfill(4) + '.nc')
+    #srefile = '/Users/janet/PycharmProjects/SHELLS/cdfits2/n15/poes_cdf_n15_2015_2020.nc'
+    sar_ref = nc4.Dataset(srefile, 'r')
+    #print(srefile)
+
+    # Step through each variable to do the mapping
+    for eco in range(0, len(evars)):
+
+        # This is the fits for the percentile for each flux for the sat being
+        # processed and the current column. It uses evars which are the electron flux cols
+        sar = sar_sat[evars[eco]][:]
+
+        # This is the fits for the percentile for the ref sat
+        sarout = sar_ref[evars[eco]][:]
+
+        # Now step through each flux val
+        # and get the percentile
+        # then get the ppf or flux for each percentile for the ref
+
+        logflux = np.log10(data[evars[eco]])
+
+        # Set bad values to 0 and then flag it later
+        nan_inds = np.where((logflux < -10) | (hemi1 < -10) | (lon1 < -10) | (Kpvec < -10) | (NSco1 < -10))
+
+        logflux[nan_inds] = 0
+        hemi1[nan_inds] = 0
+        lon1[nan_inds] = 0
+        NSco1[nan_inds] = 0
+        Kpvec[nan_inds] = 0
+
+        fluxval = 0*logflux
+        for Lco in range(0,len(Lbins)):
+            params1=sar[hemi1[:,Lco],NSco1[:,Lco],Lco,lon1[:,Lco],Kpvec[:,Lco]]
+            for fco in range(0,len(params1[:,0])):
+                if ((~np.isnan(logflux[fco,Lco])) & (~np.isinf(logflux[fco,Lco]))):
+                    rv1 = gengamma(params1[fco,0], params1[fco,1], params1[fco,2], params1[fco,3])
+                    per = rv1.cdf(logflux[fco,Lco]) # This is percentile for that flux
+                    if per>=0:
+                        params2 = sarout[1, 1, Lco, ref_ind, Kpvec[fco, Lco]]
+                        rv2 = gengamma(params2[0], params2[1], params2[2], params2[3])
+                        fluxval[fco,Lco] = rv2.ppf(per)
+                    else:
+                        fluxval[fco, Lco] = np.nan
+                else:
+                    fluxval[fco,Lco]= np.nan
+
+        fluxval[nan_inds] = np.nan
+
+        # Now fill in the bad values with the nearest values
+        # because the NN needs complete data
+        # I do this here after mapping because if you do it
+        # before mapping then it mixes data from different lons and
+        # hemispheres which can be very different
+        mask = np.where(~np.isnan(fluxval))
+        interp = NearestNDInterpolator(np.transpose(mask), fluxval[mask])
+        fluxval = interp(*np.indices(fluxval.shape))
+
+        map_data[evars[eco]] = fluxval
+
+    sar_ref.close()
+    sar_sat.close()
+
+    return map_data
+
 
 def qloss(y_true,y_pred):
     qs = [0.25,0.5,0.75]
@@ -1496,7 +1665,6 @@ def round_floats(o):
 
 
 def get_Lvals(data, inds=None):
-    from spacepy import time
     '''
     :param data: a dictionary with POES data
     :param inds: indices to get if not all
@@ -1540,7 +1708,8 @@ def get_Lvals(data, inds=None):
           'G3': zerovec, 'W1': zerovec, 'W2': zerovec, 'W3': zerovec, 'W4': zerovec, 'W5': zerovec,
           'W6': zerovec, 'AL': zerovec}
     
-    Ldata = sp.irbempy.get_Lstar(ticks, locinew, 90, extMag='0', options=opts, omnivals=om)
+    #Ldata = sp.irbempy.get_Lstar(ticks, locinew, 90, extMag='0', options=opts, omnivals=om)
+    Ldata = get_Lstar(ticks, locinew, 90, extMag='0', options=opts, omnivals=om)
     Ldata['Lm']= np.abs(Ldata['Lm'][:])
     Ldata['Lm'][bad_inds] = -1
     

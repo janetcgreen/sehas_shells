@@ -3,7 +3,12 @@ import unittest
 import numpy as np
 import os
 import sys
+# This adds ../src to the path so they can be imported when
+# running tests from the tests directory
+func_path = os.path.join(os.path.dirname( __file__ ), '../src')
+sys.path.insert(0, func_path)
 import process_SHELLS_inputs as pr
+import shells_web_utils as swu
 import sqlite3 as sl
 from collections import OrderedDict
 import glob
@@ -13,9 +18,9 @@ import pandas as pd
 import tempfile
 import shutil
 
-sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 #sys.path.insert(1, '/efs/spamstaging/live/chargehaz/')
-import shells_web_utils as swu
+#import shells_web_utils as swu
 
 class test_process_shells_inputs(unittest.TestCase):
     # PURPOSE: To test process_shells_inputs that gets poes data ready for shells model
@@ -127,11 +132,23 @@ class test_process_shells_inputs(unittest.TestCase):
             #") ENGINE=InnoDB")
 
         return tables
+    #===================================================================
+    # These are the tests that run
+    # TEST 1: Check that sqlite real time mode returns a valid start date
+    # TEST 2: Check that CCMC real time mode returns a valid start date
+    # TEST 3: Check that the poes_sat_sem2 class returns a mission start
+    # TEST 4: Check that data is created as nc file with no config
+    # TEST 5: Check that data is added to dbase in reprocessing
+    # TEST 6: Check csv file creation when running in reprocessing mode
+    # TEST 7: Check json file creation when running in reprocessing mode
+    # TEST 8: Check that old data is overwritten by new data when adding to an existing file
+    # TEST 9: Check that todays date is returned when no csv files exist yet
+    # TEST 10: Check that a csv file updates in real time mode
 
 
-    def test_A_check_test_start_date(self):
+    def test_B_check_test_start_date(self):
         #===============================================================
-        # TEST: Check that test sqlite real time mode returns a valid start date
+        # TEST 1: Check that sqlite real time mode returns a valid start date
         #==============================================================
         print('*** TEST: Check that test sqlite real time mode returns a valid start date')
         # This testing config file has
@@ -151,7 +168,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
     def test_B_check_CCMC_start_date(self):
         #===============================================================
-        # TEST: Check that CCMC real time mode returns a valid start date
+        # TEST 2: Check that CCMC real time mode returns a valid start date
         #==============================================================
         # Under SHELLS_CCMC this config file has
         # server=https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/
@@ -172,7 +189,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
     def test_poes_sat_sem2(self):
         #================================================================
-        # TEST: Check that the poes_sat_sem2 class returns a mission start
+        # TEST 3: Check that the poes_sat_sem2 class returns a mission start
         #================================================================
         print('*** TEST:Check that the poes_sat_sem2 class returns a mission start')
         satclass = swu.poes_sat_sem2('N16')
@@ -181,7 +198,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
     def test_B_run_shells_reprocess_sqlite(self):
         #==================================================================
-        # TEST: Check that data is created as nc file with no config
+        # TEST 4: Check that data is created as nc file with no config
         #==================================================================
         # Arguments here are sdate,edate,
         # realtime,neural,localdir,outdir,cdfdir
@@ -193,7 +210,7 @@ class test_process_shells_inputs(unittest.TestCase):
         print('*** TEST: Check that data is created as nc file with no config')
 
         outdir = self.test_dir
-        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         # Run the code that should create a dbase data for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, outdir, cdfdir,
@@ -209,7 +226,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
     def test_B_run_shells_reprocess_sqlite(self):
         #==================================================================
-        # TEST: Check that data is added to dbase in reprocessing
+        # TEST 5: Check that data is added to dbase in reprocessing
         #==================================================================
         # Arguments here are sdate,edate,
         # realtime,neural,localdir,outdir,cdfdir
@@ -228,7 +245,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_SQLITE')
         outdir = self.test_dir
-        cdfdir = os.path.join( os.getcwd(), '..','SHELLS','cdf' )
+        cdfdir = os.path.join( os.getcwd(), '..','SHELLS','cdfits' )
 
         # Run the code that should create a dbase data for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
@@ -254,7 +271,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
     def test_B_run_shells_reprocess_csv(self):
         #==================================================================
-        # TEST: Check csv file creation when running in reprocessing mode
+        # TEST 6: Check csv file creation when running in reprocessing mode
         #==================================================================
         # Arguments here are sdate,edate,
         # realtime,neural,localdir,outdir,cdfdir
@@ -277,7 +294,7 @@ class test_process_shells_inputs(unittest.TestCase):
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         if len(flist)>1:
             os.remove(flist[0])
-        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         # Run the code that should create a csv file for 2022/1/1
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, self.test_dir, cdfdir,
@@ -307,9 +324,9 @@ class test_process_shells_inputs(unittest.TestCase):
             testit = 0
         self.assertEqual(1, testit)
 
-    def test_B_run_shells_reprocess_json(self):
+    def test_A_run_shells_reprocess_json(self):
         #==================================================================
-        # TEST: Check json file creation when running in reprocessing mode
+        # TEST 7: Check json file creation when running in reprocessing mode
         #==================================================================
         # Arguments here are sdate,edate,
         # realtime,neural,localdir,outdir,cdfdir
@@ -333,7 +350,8 @@ class test_process_shells_inputs(unittest.TestCase):
         flist = glob.glob(os.path.join(os.getcwd(),fbase))
         if len(flist)>1:
             os.remove(flist[0])
-        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+        #cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, self.test_dir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
@@ -365,7 +383,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
     def test_B_run_shells_reprocess_overwrite(self):
         #============================================================
-        # TEST:Check that old data is overwritten by new data when adding
+        # TEST 8:Check that old data is overwritten by new data when adding
         # to an existing file
         #============================================================
         # First create an existing json file of data like in the last test
@@ -387,7 +405,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         if len(flist)>0:
             os.remove(flist[0])
-        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, self.test_dir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
@@ -447,7 +465,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
     def test_B_run_shells_csv_realtime_start(self):
         #==================================================
-        # TEST: Check that todays date is returned when no csv files exist yet
+        # TEST 9: Check that todays date is returned when no csv files exist yet
         #==================================================
         # If you start running in real time with no data then it should
         # begin processing data for the current day
@@ -460,9 +478,9 @@ class test_process_shells_inputs(unittest.TestCase):
         testdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
         self.assertEqual(sdate, testdate)
 
-    def test_A1_run_shells_csv_realtime_update(self):
+    def test_B_run_shells_csv_realtime_update(self):
         #==================================================
-        # TEST: Check that a csv file updates in real time mode
+        # TEST 10: Check that a csv file updates in real time mode
         #==================================================
         # Start by creating a csv file in reprocessing mode for the
         # previous day
@@ -473,7 +491,7 @@ class test_process_shells_inputs(unittest.TestCase):
         outdir = self.test_dir
         sat = 'n15'
         sdate =(dt.datetime.utcnow()-dt.timedelta(days=2))
-        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         # This should add a file for the day before
         pr.process_SHELLS(sdate, sdate,
                           False, False, None, outdir, cdfdir,
@@ -494,7 +512,7 @@ class test_process_shells_inputs(unittest.TestCase):
         dat = pd.read_csv(flist[0]).to_dict(orient='list')
         dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
         lasttime = dt.datetime.strptime(dat['time'][-1],dformat)
-        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+        cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         # Then try to update in rt
         pr.process_SHELLS(None, None,
                           True, False, None, self.test_dir, cdfdir,

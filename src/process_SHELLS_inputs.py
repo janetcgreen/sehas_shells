@@ -23,8 +23,7 @@ import calendar
 #from spacepy import coordinates as coord
 #from spacepy.irbempy import get_Lstar
 #import spacepy as sp
-
-sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
+#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
 import shells_web_utils as swu
 
@@ -981,7 +980,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             logging.info('Mapping data '+sdate.strftime("%Y%m%d") + ' ' + sat)
                             print('Mapping data')
 
-                            map_data = swu.map_poes(binned_data, channels, sat, sat_ref, ref_ind, cdf_dir, myear, ref_syear, ref_eyear)
+                            map_data = swu.map_poes_fits(binned_data, channels, sat, sat_ref, ref_ind, cdf_dir, myear, ref_syear, ref_eyear)
 
                             map_data['L_IGRF'] = Lbins[0:-1]
                             map_data['dims'] = ['time','L_IGRF']
@@ -1201,7 +1200,7 @@ if __name__ == "__main__":
                         required=False, default = os.path.join(os.getcwd(),'SHELLS'))
     parser.add_argument('-cdf', "--cdfdir",
                         help="The local directory with the cdf files",
-                        required=False, default = os.path.join(os.getcwd(),'SHELLS','cdf'))
+                        required=False, default = os.path.join(os.getcwd(),'SHELLS','cdfits'))
     parser.add_argument('-ns', "--noaasite",
                         help="The remote noaa site to get the noaa files",
                         required=False)
