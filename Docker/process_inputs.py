@@ -109,7 +109,7 @@ def read_db_inputs_2(req_times):
         cursor = conn.cursor()
 
         # Read the SHELLS input times for the range of times passed by the user
-        mtime = '2022-01-02T22:31:50.327000Z'
+        # mtime = '2022-01-02T22:31:50.327000Z'
         cursor.execute(
             "SELECT * FROM ShellsInputsTbl "
             "WHERE (time >= ? AND time <= ?) "
@@ -337,6 +337,7 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                     # Todo check if this works for multiple Bms
                     # If there is multiple Bms then each energy channel will be [timeXBm]
                     temp = outdat[cols[cco]][:] # Get the current data for that energy col
+                    #Todo set Ls>6.3 to nan
                     outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
 
     return outdat
@@ -386,6 +387,8 @@ def process_data(time, Ls, Bmirrors, Energies):
             # This reorganizes the data from the dbase
             map_data = reorg_data(keys, rows, channels)
 
+        # Replace map_data['time'] with the requested times
+        map_data['time'] = time
         #print('Doing nn')
         # Before we were calling the nn with a fixed set of Ls, and Bmirrors
         # for every time stamp that were passed with L=Ls and Bmirrors = Bmirros.
