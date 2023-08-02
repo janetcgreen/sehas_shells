@@ -30,7 +30,6 @@ def get_nearest(list_dt, dt):
 
     pos = bisect_right(list_dt, dt)
 
-
     if pos == 0:
         return 0
     if pos == len(list_dt):
@@ -39,56 +38,10 @@ def get_nearest(list_dt, dt):
     return pos-1
 
 
-def read_db_inputs(sdate, edate):
-    '''
-    PURPOSE: to get the shells data inputs from an sqlite dbase for testing
-    :param sdate: start time for requested data
-    :param edate: end time for requested data
-    :return:
-    '''
-    conn = None
-    names = None
-    rows = None
-
-    try:
-        # Connect to the sqlite dbase
-        dbase = os.path.join(os.path.dirname( __file__ ), 'resources/test_sehas_shells.sq')
-        conn = sl.connect(dbase)
-        cursor = conn.cursor()
-
-        # Read in the SHELLS input data for the range of times passed by the user
-        # and also get the last time prior to the start date
-        cursor.execute(
-            "SELECT * FROM ShellsInputsTbl "
-            "WHERE (time BETWEEN ? AND ?) "
-            "OR time = (SELECT MAX(time) FROM ShellsInputsTbl WHERE time < ?) "
-            "ORDER BY time", (sdate, edate, sdate))
-        rows = cursor.fetchall()
-
-        # Get the column names
-        names = [description[0] for description in cursor.description]
-        # print(names)
-
-        # Get the column number
-        cursor.execute("SELECT COUNT(*) FROM pragma_table_info('ShellsInputsTbl')")
-        count = cursor.fetchall()
-        # print(count[0][0])
-
-        if conn is not None:
-            conn.close()
-
-    except Exception as err:
-        logging.error('Problems connecting to dbase' + str(err))
-        if conn is not None:
-            conn.close()
-
-    return names, rows
-
-
-def read_db_inputs_2(req_times):
+def read_db_inputs(req_times):
     '''
 
-    :param req_times: list of times requeted by user
+    :param req_times: list of times requested by user
     :return:
     '''
     conn = None
@@ -128,7 +81,6 @@ def read_db_inputs_2(req_times):
         # Get the actual times to make sure it works right
         nearest_times = [input_times[x] for x in nearest_pos]
 
-
         #print('input times: ', input_times)
         #print('request times: ', req_times)
         #print('nearest times: ', nearest_times)
@@ -157,7 +109,7 @@ def read_db_inputs_2(req_times):
 
     return names, rows
 
-def reorg_data(keys,rows,channels):
+def reorg_data(keys,rows):
     # List of the channels
 
     # Initialize map_data
@@ -211,134 +163,140 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     :return:
     '''
 
-    # List of energies we want for the output data
-    #print(" Doing nn")
-    if Energies is None:
-        # If no Energies are passed it assumes this
-        Energies = np.arange(200.0, 3000.0, 200.0)
+    try:
+        # List of energies we want for the output data
+        #print(" Doing nn")
+        if Energies is None:
+            # If no Energies are passed it assumes this
+            Energies = np.arange(200.0, 3000.0, 200.0)
 
-    # The Bmirror values for the output at each l
-    if Bmirrors is None:
-        # This is for the value at the equator
-        Bmirrors = [2.591e+04 * (l ** -2.98) for l in L]
+        # The Bmirror values for the output at each l
+        if Bmirrors is None:
+            # This is for the value at the equator
+            Bmirrors = [2.591e+04 * (l ** -2.98) for l in L]
 
-    # L values for the ouput corresponding to each bmirror
-    if L is None:
-        L = np.arange(3., 6.3, 1)
+        # L values for the ouput corresponding to each bmirror
+        if L is None:
+            L = np.arange(3., 6.3, 1)
 
-    # Check for -1 where L>7.5
-    # Sometimes this happens in the input data because the POES orbit does not
-    # go out very far. In that case, set it to neighboring values
-    # Step through each energy channel
-    for wco in range(0, len(evars)):
-        bad_inds = np.where((data[evars[wco]][:]) < 0)
-        if len(bad_inds[0]) > 0:
-            for bco in range(0, len(bad_inds[0])):
-                # Set the flux equal to the neighbor
-                data[evars[wco]][bad_inds[0][bco]][bad_inds[1][bco]] = data[evars[wco]][bad_inds[0][bco]][
-                    bad_inds[1][bco] - 1]
+        # Check for -1 where L>7.5
+        # Sometimes this happens in the input data because the POES orbit does not
+        # go out very far. In that case, set it to neighboring values
+        # Step through each energy channel
+        for wco in range(0, len(evars)):
+            bad_inds = np.where((data[evars[wco]][:]) < 0)
+            if len(bad_inds[0]) > 0:
+                for bco in range(0, len(bad_inds[0])):
+                    # Set the flux equal to the neighbor
+                    data[evars[wco]][bad_inds[0][bco]][bad_inds[1][bco]] = data[evars[wco]][bad_inds[0][bco]][
+                        bad_inds[1][bco] - 1]
 
-    # Todo need to deal with bad data
-    # The input data has timeXL for each energy in a dict
-    # The expected input for the nn is timeXL e1, timeXL e2 timeXL e3, timeXL e4
-    # So need to concatentate into one  array
-    new_dat = np.array(data[evars[0]][:])
-    for wco in range(1, len(evars)):
-        new_dat = np.append(new_dat, data[evars[wco]], axis=1)
+        # Todo need to deal with bad data
+        # The input data has timeXL for each energy in a dict
+        # The expected input for the nn is timeXL e1, timeXL e2 timeXL e3, timeXL e4
+        # So need to concatentate into one  array
+        new_dat = np.array(data[evars[0]][:])
+        for wco in range(1, len(evars)):
+            new_dat = np.append(new_dat, data[evars[wco]], axis=1)
 
-    l, w = np.shape(new_dat)
+        l, w = np.shape(new_dat)
 
-    # Output needed if we are going to make a netcdf file
-    # data[E][time x L] at Beq for that L
-    # data[E1_upperq] [timeXL] upper quantile
-    # data[E1_lowerq] [timexL] lower quantile
+        # Output needed if we are going to make a netcdf file
+        # data[E][time x L] at Beq for that L
+        # data[E1_upperq] [timeXL] upper quantile
+        # data[E1_lowerq] [timexL] lower quantile
 
-    # Create a dict for the output data
-    outdat = {}
-    outdat['L'] = L # This could be 1D or 2D
-    outdat['Bmirrors'] = Bmirrors # This could be 1d or 2d
-    outdat['Energies'] = Energies # This should be 1d
+        # Create a dict for the output data
+        outdat = {}
+        outdat['L'] = L # This could be 1D or 2D
+        outdat['Bmirrors'] = Bmirrors # This could be 1d or 2d
+        outdat['Energies'] = Energies # This should be 1d
 
-    # Then create arrays for flux at each Energy and E quantiles
+        # Then create arrays for flux at each Energy and E quantiles
 
-    # Need to check if Bmirrors/Ls is 1D or 2d
-    # If its 2D then its an xyz request
+        # Need to check if Bmirrors/Ls is 1D or 2d
+        # If its 2D then its an xyz request
 
-    if len(np.shape(Bmirrors))>1:
-        Bl, Bw = np.shape(Bmirrors) #(2D)
-    else:
-        Bw = len(Bmirrors) #1D
+        if len(np.shape(Bmirrors))>1:
+            Bl, Bw = np.shape(Bmirrors) #(2D)
+        else:
+            Bw = len(Bmirrors) #1D
 
-    # Define the output columns
-    for E in Energies:
-        # I changed this so that the output will be timeXBmirrors (or pitch angles)
-        col = 'E flux ' + str(int(E))
-        outdat[col] = np.zeros((0, Bw), dtype=float)
-        colh = 'E flux ' + str(int(E)) + ' upper q'
-        outdat[colh] = np.zeros((0, Bw), dtype=float)
-        coll = 'E flux ' + str(int(E)) + ' lower q'
-        outdat[coll] = np.zeros((0, Bw), dtype=float)
+        # Define the output columns
+        for E in Energies:
+            # I changed this so that the output will be timeXBmirrors (or pitch angles)
+            col = 'E flux ' + str(int(E))
+            outdat[col] = np.zeros((0, Bw), dtype=float)
+            colh = 'E flux ' + str(int(E)) + ' upper q'
+            outdat[colh] = np.zeros((0, Bw), dtype=float)
+            coll = 'E flux ' + str(int(E)) + ' lower q'
+            outdat[coll] = np.zeros((0, Bw), dtype=float)
 
-    outdat['time'] = list() # same times will be returned except bad data
-    outdat['Kp'] = list() # same Kp will be returned
-    outdat['Kpmax'] = list() # same Kpmax will be returned
+        outdat['time'] = list() # same times will be returned except bad data
+        outdat['Kp'] = list() # same Kp will be returned
+        outdat['Kpmax'] = list() # same Kpmax will be returned
 
-    # Step through each time step in the input data and do the nn
-    for pco in range(0, l):
-        # The input needs Kp, Kpmax, E, Bmirror for each L
-        # Check that the input data does not have Nans
-        check_dat = np.where((np.isnan(new_dat[pco][:])) | (new_dat[pco][:] < 0))[0]
+        # Step through each time step in the input data and do the nn
+        for pco in range(0, l):
+            # The input needs Kp, Kpmax, E, Bmirror for each L
+            # Check that the input data does not have Nans
+            check_dat = np.where((np.isnan(new_dat[pco][:])) | (new_dat[pco][:] < 0))[0]
 
-        if len(check_dat) < 1:
-            # Append the current value to the outdat list
-            outdat['time'].append(data['time'][pco])
-            outdat['Kp'].append(Kpdata[pco] / 10)
-            outdat['Kpmax'].append(Kpmax_data[pco] / 10)
+            if len(check_dat) < 1:
+                # Append the current value to the outdat list
+                outdat['time'].append(data['time'][pco])
+                outdat['Kp'].append(Kpdata[pco] / 10)
+                outdat['Kpmax'].append(Kpmax_data[pco] / 10)
 
-            # The NN code can calculate flux for all Ls/Bm at once
-            kp = np.tile(Kpdata[pco], Bw)  # Create a list of Kp for each Bmirror
-            maxkp = np.tile(Kpmax_data[pco], Bw)  # Create a list of maxKp for each Bmirror
-            # Create a list of POES data to be used for each Bmirror calc
-            poes = np.tile(new_dat[pco:pco + 1], (Bw, 1))
+                # The NN code can calculate flux for all Ls/Bm at once
+                kp = np.tile(Kpdata[pco], Bw)  # Create a list of Kp for each Bmirror
+                maxkp = np.tile(Kpmax_data[pco], Bw)  # Create a list of maxKp for each Bmirror
+                # Create a list of POES data to be used for each Bmirror calc
+                poes = np.tile(new_dat[pco:pco + 1], (Bw, 1))
 
-            # Check if Bmirrors is 2D or 1D
-            if len(np.shape(Bmirrors))>1:
-                Bthis = Bmirrors[pco]
-            else:
-                Bthis = Bmirrors
+                # Check if Bmirrors is 2D or 1D
+                if len(np.shape(Bmirrors))>1:
+                    Bthis = Bmirrors[pco]
+                else:
+                    Bthis = Bmirrors
 
-            # Check if L is 2D or 1D
-            if len(np.shape(L))>1:
-                Lthis = L[pco]
-            else:
-                Lthis = L
+                # Check if L is 2D or 1D
+                if len(np.shape(L))>1:
+                    Lthis = L[pco]
+                else:
+                    Lthis = L
 
-            # If there is just one L then need to repeat it for each Bmirror
-            if len(Lthis) != len(Bthis):
-                Lthis = np.tile(Lthis, Bw)
+                # If there is just one L then need to repeat it for each Bmirror
+                if len(Lthis) != len(Bthis):
+                    Lthis = np.tile(Lthis, Bw)
 
-            # Step through each energy and create outdat[Ecol] that is len Bmirror
-            for eco in range(0, len(Energies)):
-                # Make a list of one energy at all Bm's
-                energy = np.tile(Energies[eco], Bw)
-                input = np.concatenate((np.array(energy).reshape(-1, 1), np.array(Bthis).reshape(-1, 1),
-                                        np.array(Lthis).reshape(-1, 1), np.array(kp).reshape(-1, 1),
-                                        np.array(maxkp).reshape(-1, 1),
-                                        poes), axis=1)
-                # This returns the lowerq, log(flux), upperq data for one E and Bmirror(L) at each L
-                # start=ti.time()
-                fpre = out_scale.inverse_transform(hdf5.predict(in_scale.transform(input)))
-                # tend = ti.time()
-                # print('time to do nn',tend-start)
-                cols = ['E flux ' + str(int(Energies[eco])) + ' upper q',
-                        'E flux ' + str(int(Energies[eco])),
-                        'E flux ' + str(int(Energies[eco])) + ' lower q', ]
-                for cco in range(0, len(cols)):
-                    # Todo check if this works for multiple Bms
-                    # If there is multiple Bms then each energy channel will be [timeXBm]
-                    temp = outdat[cols[cco]][:] # Get the current data for that energy col
-                    #Todo set Ls>6.3 to nan
-                    outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
+                # Step through each energy and create outdat[Ecol] that is len Bmirror
+                for eco in range(0, len(Energies)):
+                    # Make a list of one energy at all Bm's
+                    energy = np.tile(Energies[eco], Bw)
+                    input = np.concatenate((np.array(energy).reshape(-1, 1), np.array(Bthis).reshape(-1, 1),
+                                            np.array(Lthis).reshape(-1, 1), np.array(kp).reshape(-1, 1),
+                                            np.array(maxkp).reshape(-1, 1),
+                                            poes), axis=1)
+                    # This returns the lowerq, log(flux), upperq data for one E and Bmirror(L) at each L
+                    # start=ti.time()
+                    fpre = out_scale.inverse_transform(hdf5.predict(in_scale.transform(input)))
+                    # tend = ti.time()
+                    # print('time to do nn',tend-start)
+                    cols = ['E flux ' + str(int(Energies[eco])) + ' upper q',
+                            'E flux ' + str(int(Energies[eco])),
+                            'E flux ' + str(int(Energies[eco])) + ' lower q', ]
+                    for cco in range(0, len(cols)):
+                        # Todo check if this works for multiple Bms
+                        # If there is multiple Bms then each energy channel will be [timeXBm]
+                        temp = outdat[cols[cco]][:] # Get the current data for that energy col
+                        #Todo set Ls>6.3 to nan
+                        outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
+
+    except Exception as e:
+        # If there are any exceptions then log the error
+        print(e)
+        logging.error(e)
 
     return outdat
 
@@ -377,13 +335,13 @@ def process_data(time, Ls, Bmirrors, Energies):
         # Check if testing or no
         if current_app.testing==True:
             # In testing mode read the poes data from an sqlite dbase
-            keys, rows = read_db_inputs_2(time)
+            keys, rows = read_db_inputs(time)
             # This reorganizes the data from the dbase
             map_data = reorg_data(keys,rows,channels)
         else:
             # Todo This should read from CCMC HAPI dbase
             # In testing mode read the data from an sqlite dbase
-            keys, rows = read_db_inputs_2(time)
+            keys, rows = read_db_inputs(time)
             # This reorganizes the data from the dbase
             map_data = reorg_data(keys, rows, channels)
 

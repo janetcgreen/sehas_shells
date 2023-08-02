@@ -15,7 +15,7 @@ blp = Blueprint("I/O", __name__, description="Operations for the shells model")
 @blp.route("/shells_io")
 class IOList(MethodView):
     @blp.arguments(InSchema)
-    @blp.response(201)
+    @blp.response(200)
     # InSchema is defined in schema.py
     # There is no fixed output schema in blp.response because the output varies
     def post(self, io_data):
@@ -118,14 +118,26 @@ class IOList(MethodView):
             else:
                 magephem_response["Bm"] = [[Bmirror]]*len(io_data["time"])
         else:
-            # Todo: check the response and if it gets a 500 or other errors
+            resp = requests.post(url, json=magephem_input)
+
+            # Check the response and if it gets a 500 or other errors
             # then it needs to exit
-            magephem_response = requests.post(url, json=magephem_input).json()
+            if resp.status_code != 200:
+                # The magephem "hardcoded" post responses are 200 ("successful operation") and 405 ("Invalid input")
+                # If an error occurs, we'll check first if the response is 405. If not, we'll check the other
+                # "standard" responses
+                if resp.status_code == 405:
+                    error_desc = "magephem error 405: Invalid input"
+                else:
+                    error_desc = "magephem error {}: {}".format(magephem_response['status'], magephem_response['title'])
+                return error_desc
+
+            magephem_response = resp.json()
 
         # Here we pass a list of times, a list of Ls for each time i.e. [[L1]],
         # and a list of [Bms] for each time [[Bm]]
         # Bm and L will have multiple values if multiple pitch angles are requested
-        # and the list of energies requeste
+        # and the list of energies requested
         output = pi.process_data(io_data["time"], magephem_response["L"], magephem_response["Bm"], io_data["energies"])
 
         # The output will be a json dict
@@ -151,7 +163,7 @@ class IOList(MethodView):
 @blp.route("/shells_io_L")
 class IOList(MethodView):
     @blp.arguments(InLSchema)
-    @blp.response(201)
+    @blp.response(200)
     # InSchema is defined in schema.py
     # There is no fixed output schema in blp.response because the output varies
     def post(self, io_data):
