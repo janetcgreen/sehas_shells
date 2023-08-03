@@ -109,7 +109,7 @@ def read_db_inputs(req_times):
 
     return names, rows
 
-def reorg_data(keys,rows):
+def reorg_data(keys,rows,channels):
     # List of the channels
 
     # Initialize map_data
