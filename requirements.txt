@@ -10,3 +10,5 @@ hapiclient==0.2.5
 protobuf==3.19.6
 tensorflow==2.7.0
 keras==2.7.0
+jdcal==1.4.1
+sgp4==2.22
