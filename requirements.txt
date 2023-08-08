@@ -12,3 +12,6 @@ pytest==7.3.1
 flask-smorest==0.41.0
 python-dotenv==0.21.0
 scikit-learn==1.2.1
+keras==2.7.0
+jdcal==1.4.1
+sgp4==2.22
