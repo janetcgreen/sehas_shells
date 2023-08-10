@@ -1,4 +1,5 @@
-FROM e3-devops.aero.org/ssdhas/python:3.9.13-buster
+#FROM e3-devops.aero.org/ssdhas/python:3.9.13-buster
+FROM python:3.9.13-buster
 
 WORKDIR /app
 
@@ -8,10 +9,8 @@ COPY test /app/test
 COPY requirements.txt .
 
 
-RUN DOW=$(date +%a) \
-    && export http_proxy=http://31180:$DOW@proxy-west.aero.org:8080 \
-    && export https_proxy=http://31180:$DOW@proxy-west.aero.org:8080 \
-    && apt-get update \
+#RUN DOW=$(date +%a) \
+RUN apt-get update \
     && apt-get install -y build-essential \
     && apt-get install -y libhdf5-dev \
     && apt-get install -y libxerces-c-dev \

@@ -1,9 +1,10 @@
 flask
 flask-smorest
+marshmallow
 python-dotenv
 joblib
 keras
 mysql.connector
 numpy
-tensorflow
+tensorflow==2.10.0
 scikit-learn

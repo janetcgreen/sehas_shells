@@ -64,7 +64,7 @@ class IOList(MethodView):
 
         # "MAGEPHEM" is defined in the .env file test and in the top dir
         url = os.environ.get("MAGEPHEM")
-
+    
         # User inputs date/time, x,y,z and pitch angles
         # Create the json input structure for magephem request
         magephem_input = {
@@ -143,7 +143,6 @@ class IOList(MethodView):
         # The output will be a json dict
         # Todo figure out what exactly should be output other than flux
         # output has time, L, E flux 200, etc
-
         # return the user reqested pitch angles as well
         output['pitch_angles']= io_data["pitch_angles"]
         output['L'] = magephem_response["L"]
