@@ -450,7 +450,7 @@ class test_process_shells_inputs(unittest.TestCase):
             # Then check that the values are -1 to show that the oldata
             # was replaced
             tsum=0
-            for key in [x for x in list(testfile2.keys()) if x not in ['time']]:
+            for key in [x for x in list(testfile2.keys()) if x not in ['time','satID']]:
                 tsum = tsum +np.sum(np.array(testfile2[key]))
             if tsum<0:
                 testit=1

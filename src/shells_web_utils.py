@@ -683,7 +683,7 @@ def map_poes_fits(data, evars, sat, satref, ref_ind, cdf_dir, year, ref_syear, r
 
     Kp = np.floor(data['Kp*10'][:] / 10)
     Kp1 = Kp.astype(int)
-    Kp1[Kp1>5] = 5 # We combine high kps for the cdf file
+    Kp1[Kp1>4] = 4 # We combine high kps for the cdf file
     # Make Kp into an array that's duplicated for each Lbin
     Kpvec = np.tile(Kp1, (len(Lbins), 1)).T
 
@@ -815,7 +815,7 @@ def run_nn(data,evars,Kpdata,Kpmax_data,out_scale,in_scale,m, L = None, Bmirrors
     # The Bmirror values for the output at each L
     if Bmirrors is None:
         # This is for the value at the equator
-        Bmirrors = [2.591e+04*(L**-2.98) for L in Ls ]
+        Bmirrors = [2.591e+04*(L**-2.98) for Ls in L ]
     # L values for the ouput corresponding to each bmirror
     if L is None:
         L = np.arange(3.,6.3,1)
@@ -1563,7 +1563,9 @@ def write_shells_text(outdir, outdat, fname, otype):
             newdat[Kpcol] = list(outdat[Kpcol][dayinds])
 
         # Add a satid col
-        satid = poes_sat_sem2(outdat['sat']).satid()
+        #satid = poes_sat_sem2(outdat['sat']).satid()
+        satid = outdat['sat']
+        # JGREEN: 08/2023 Changed satid to be a string
         newdat['satID'] = [satid]*len(dayinds)
 
         # Check if there is a daily file started already

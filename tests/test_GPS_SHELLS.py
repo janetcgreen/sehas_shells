@@ -123,7 +123,7 @@ class test_GPS_shells(unittest.TestCase):
         #===============================================================
         # TEST 4: Check that data is added to the output file
         #==============================================================
-        # For this test, first create and output file. Then subtract some
+        # For this test, first create an output file. Then subtract some
         # data from it and run it again
         # First delete any existing test output
         sat = "PRN 32"

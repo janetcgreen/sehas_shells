@@ -65,6 +65,7 @@ def satname_to_satID(satname):
     sats = ['n15','n16','n17','n18','n19','m01','m02','m03']
     IDS = [4,2,6,7,8,11,12,13]
     return IDS[sats.index(satname)]
+
 def satID_to_satname( satID ):
 
     '''
