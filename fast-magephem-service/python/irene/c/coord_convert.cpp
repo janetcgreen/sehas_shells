@@ -38,7 +38,7 @@ typedef S3Tuple S3Coord;
 
 #include "coord_convert.h"
 
-static auto_ptr<CMagfield> pModel;
+static unique_ptr<CMagfield> pModel;
 
 const double dEarthRadiusKM = 6371.2;
 
@@ -111,7 +111,7 @@ extern "C"
 
     if (pModel.get() == NULL) {
 
-      pModel = auto_ptr<CMagfield> (new CMagfield());
+      pModel = unique_ptr<CMagfield> (new CMagfield());
 
       errG = pModel->Initialize(szDbPath);
       if (errG != eNoError) {

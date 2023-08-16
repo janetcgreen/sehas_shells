@@ -3,7 +3,7 @@
     {
     "endpoint":"/coord_trans",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "dates": [
             "2020-12-31T12:59:49.0Z",
@@ -13,7 +13,8 @@
           "toSys": "GEO",
           "xIN": [[100,45,-73],[100.1,45.2,-73.5]]
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
           "dates": [
             "2020-12-31T12:59:49.0Z",
@@ -37,7 +38,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [[100,45,-73],[100.1,45.2,-73.5]],
           "dates": [
@@ -52,7 +53,8 @@
           ],
           "sys": "GDZ"
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
           "Bm": [
             50686.00963061971,
@@ -70,7 +72,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [[100,45,-73],[10000.1,45.2,-73.5]],
           "dates": [
@@ -86,7 +88,8 @@
           "sys": "GDZ",
           "alpha" : 45
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
           "Bm": [
             101372.01926123945,
@@ -110,7 +113,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [[100,45,-73],[10000.1,45.2,-73.5]],
           "dates": [
@@ -126,7 +129,8 @@
           "sys": "GDZ",
           "alpha" : [45,90]
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
           "Bm": [[101372.01926123945],[2987.6386011013005]],
           "I": [[-1e+30],[15.329857184162712]],
@@ -141,7 +145,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [[100,45,-73],[10000.1,45.2,-73.5]],
           "dates": [
@@ -157,7 +161,8 @@
           "sys": "GDZ",
           "alpha" : [[45,90]]
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
           "Bm": [
             [
@@ -191,7 +196,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [[100,45,-73],[10000.1,45.2,-73.5]],
           "dates": [
@@ -207,7 +212,8 @@
           "sys": "GDZ",
           "alpha" : [45,60,90]
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
           "Bm": [
             [
@@ -245,7 +251,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [[100,45,-73],[10000.1,45.2,-73.5]],
           "dates": [
@@ -260,7 +266,8 @@
           ],
           "sys": "GDZ"
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
             "Bm": [50686.00963061969, 2974.377024414119], 
             "I": [-1e+30, 13.831979026415723], 
@@ -272,7 +279,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [
             [
@@ -298,7 +305,8 @@
           ],
           "sys": "GDZ"
         },
-    "outputs": 
+    "response-type" : "json",
+    "response": 
         {
             "Bm": [50686.00963061971, 2987.6386011013005], 
             "I": [-1e+30, 15.329857184162712], 
@@ -310,7 +318,7 @@
     {
     "endpoint":"/magephem",
     "method":"POST",
-    "inputs":
+    "body":
         {
           "X": [
             [
@@ -336,7 +344,8 @@
           ],
           "sys": "GDZ"
         },
-    "outputs":
+    "response-type" : "json",
+    "response":
         {
             "Bm": [50686.00963061969, 2974.377024414119], 
             "I": [-1e+30, 13.831979026415723], 

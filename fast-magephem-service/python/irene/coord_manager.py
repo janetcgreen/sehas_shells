@@ -27,7 +27,6 @@ BminX,BminY,BminZ - (Nt,) GEO coordinates of equatorial crossing, RE
 """
 
 import numpy as np
-from numpy.matlib import repmat
 from .mod_jul_date import datetime2mjd
 from .mag_field import fastI, ItoLm, Bfield, coordinate_transform
 from .fast_invariants import fast_PhiK, fast_hminK
@@ -78,10 +77,12 @@ class CoordManager(object):
         if self.alphaI.ndim == 1:
             if self.alpha.shape[0]==self.Nt:
                 self.alphaI = self.alphaI.reshape((self.Nt,1)) # (Nt,1)
-            else:
-                self.alphaI = repmat(self.alphaI.reshape(1,len(self.alphaI)),self.Nt,1) # (Nt,Ndir)
+            else:                
+                # self.alphaI = repmat(self.alphaI.reshape(1,len(self.alphaI)),self.Nt,1) # (Nt,Ndir) - repmat deprecated
+                self.alphaI = np.repeat(self.alphaI.reshape(1,len(self.alphaI)),self.Nt,axis=0) # (Nt,Ndir)
         if self.alphaI.shape[0] == 1:
-            self.alphaI = repmat(alpha,self.Nt,1) # Nt,Ndir
+            # self.alphaI = repmat(alpha,self.Nt,1) # Nt,Ndir - repmat deprecated
+            self.alphaI = np.repeat(alpha,self.Nt,axis=0) # Nt,Ndir
             
         self.Ndir = self.alphaI.shape[1] # number of angles
         self.coords = SUPPORTED_COORDS

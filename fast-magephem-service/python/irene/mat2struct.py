@@ -110,6 +110,6 @@ def squeeze_array(a,no_scalar=False):
     if sz:
         b.shape = tuple(sz)
     else:
-        b = np.asscalar(a) # singleton to scalar
+        b = a.item() # singleton to scalar
     return b
 

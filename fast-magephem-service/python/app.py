@@ -1,6 +1,12 @@
 """
 HTTP(S) server application providing Fast Magnetic Ephemeris functions
 
+invoke as:
+    python app.py
+command line options:
+    --port=23761 change port number 
+    --test run in test mode 
+
 TODO:
     update to python 3.7+ to get fromisoformat
         replace strptime call
@@ -10,6 +16,7 @@ TODO:
 """
 
 import sys
+import os
 import connexion
 import numpy as np
 import datetime as dt
@@ -17,6 +24,7 @@ from irene.mag_field import coordinate_transform
 from irene.coord_manager import CoordManager,ANGLE_DEP_COORDS
 
 BAD_FLOAT = -1e30
+DEFAULT_PORT = 23761
 
 def coord_trans(body):
     """
@@ -77,22 +85,51 @@ def magephem(body):
         out[coord] = c.tolist()
     return out
 
-# set up the flask app
-app = connexion.FlaskApp(__name__.split('.')[0])
-# resolve endpoint names relative to this module
-resolver=connexion.resolver.RelativeResolver(sys.modules[__name__])
-# Read the openapi yaml file to configure the endpoints
-app.add_api('fast-magephem.yaml',resolver=resolver)
 
-# create a URL route in our application for "/"
-@app.route("/")
-def home():
+def make_app(test_mode=True):
     """
-    This function just responds to the browser URL
-    localhost:$port/
+    app = make_app(test_mode=True)
+    test_mode: True/False use for testing
+    app: a connexion app instance
     """
-    return 'Fast Magnetic Ephemeris service (fast-magephem)<p>See: <a href=/api/ui>API</a>'
+    
+    # set up the flask app
+    
+    app = connexion.FlaskApp(__name__.split('.')[0],specification_dir=os.path.dirname('__file__'))
+    if test_mode:
+        app.app.config['TESTING'] = True
+        app.app.testing = True
+    
+    # resolve endpoint names relative to this module
+    resolver=connexion.resolver.RelativeResolver(sys.modules[__name__])
+    # Read the openapi yaml file to configure the endpoints    
+    app.add_api('fast-magephem.yaml',resolver=resolver)
+    
+    # create a URL route in our application for "/"
+    @app.route("/")
+    def home():
+        """
+        This function just responds to the browser URL
+        localhost:$port/
+        """
+        return 'Fast Magnetic Ephemeris service (fast-magephem)<p>See: <a href=/api/ui>API</a>'
+
+    return app
 
 if __name__ == "__main__":
+    
+    port=DEFAULT_PORT
+    
+    test_mode = False
+    
+    for arg in sys.argv[1:]:
+        if arg == '--test':
+            print('Test mode selected')
+            test_mode = True
+        elif arg.startswith('--port='):
+            port = int(arg.split('=')[1])
+        else:
+            raise Exception('Unexpected input argument "%s"' % arg)
 
-    app.run(port=23761)
+    app = make_app(test_mode=test_mode)    
+    app.run(port=port)

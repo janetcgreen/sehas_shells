@@ -20,7 +20,7 @@ class NeuralNet(object):
 
     def __init__(self,info):
         """ net = NeuralNet(info) - loads network from Structure """
-        strip = lambda x : np.asscalar(np.array(x)) # safe way to handle scalars that may be wrapped in arrays
+        strip = lambda x : np.array(x).item() # safe way to handle scalars that may be wrapped in arrays
         self._Nx = int(strip(info.Nx))
         self._Nh = int(strip(info.Nh))
         self._Ny = int(strip(info.Ny))

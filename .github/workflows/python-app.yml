@@ -22,12 +22,12 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       #- uses: actions/checkout@v3
-      - uses: nschloe/action-cached-lfs-checkout@v1
+      - uses: nschloe/action-cached-lfs-checkout@v1.2.1
 
-      - name: Set up Python 3.9
+      - name: Set up Python 3.9.17
         uses: actions/setup-python@v3
         with:
-          python-version: "3.9"   # install the python version
+          python-version: "3.9.17"   # install the python version
         
       - name: Install Python packages
         run: |
@@ -48,7 +48,7 @@ jobs:
             pip install $line
           done
           
-          cp src/irbempy.py /opt/hostedtoolcache/Python/3.9.16/x64/lib/python3.9/site-packages/spacepy/irbempy/
+          cp src/irbempy.py /opt/hostedtoolcache/Python/3.9.17/x64/lib/python3.9/site-packages/spacepy/irbempy/
           
       # Runs a single command using the runners shell
       - name: Run a one-line script
@@ -56,3 +56,7 @@ jobs:
           export PYTHONPATH=../src
           cd tests
           python test_process_SHELLS_inputs.py
+
+          cd ../Docker/tests/
+          pytest test_shells_api.py
+          

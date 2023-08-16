@@ -48,7 +48,7 @@ typedef S3Tuple S3Coord;
 #include "coord_convert.h"
 #include "get_field.h"
 
-static auto_ptr<CMagfield> pModel;
+static unique_ptr<CMagfield> pModel;
 static int pModel_kext = -1; // identifies prior external field model
 
 const double dEarthRadiusKM = 6371.2;
@@ -85,7 +85,7 @@ extern "C"
 
     if ((pModel.get() == NULL) || (pModel_kext != *pikext)) {
 
-      pModel = auto_ptr<CMagfield> (new CMagfield());
+      pModel = unique_ptr<CMagfield> (new CMagfield());
       pModel_kext = *pikext; // save to check next call
 
       errG = pModel->Initialize(szDbPath);
