@@ -1013,6 +1013,18 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
 
                                 outdat = map_data
 
+                            # Before writing data look for Nans or infs and
+                            # set them to -1
+                            mkeys = list(outdat.keys())
+                            mkeys.remove('time')
+                            mkeys.remove('dims')
+                            mkeys.remove('sat')
+                            for key in mkeys:
+                                print(key)
+                                ninds = np.where((np.isnan(outdat[key][:]) |(np.isinf(outdat[key][:]))))[0]
+                                outdat[key][ninds] = -1
+
+
                             # --------------- Write the data ------------------------
                             # Data may go to a dbase, files at S3 bucket or local files
                             # Todo Update this to write to a dbase if requested
