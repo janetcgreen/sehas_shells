@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 app_path = os.path.join(os.path.dirname( __file__ ), '..')
 sys.path.insert(0, app_path)  # take precedence over any other in path
 from app import create_app
+import process_inputs as pi
 
 # TESTS in this file
 # 1) test_config:
@@ -211,7 +212,7 @@ def test_request_with_LShells(client):
 def test_A_HAPI_request(client):
     # TEST: Test that the HAPI request returns the right poes data
     #
-    from Docker import process_inputs as pi
+
     sdate = dt.datetime(2023,8,17,0,0,0)
     times = [sdate+dt.timedelta(minutes=x*5) for x in range(0,256)]
     times2 = [x.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for x in times]
