@@ -1879,7 +1879,7 @@ def get_data_swpc_avg( dataloc, sat_name, dt_start, dt_end, clobber=False ):
             ''' ---------- List of Files to Ingest ------------------ '''
             # File name pattern we need to look for (data are organized as day files):
             dtype='avg'
-            fn_list = get_file_list(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_dir_root_list=[])
+            fn_list = get_file_list(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_root_list=[])
 
             #logger.debug( 'Found %d files to aggregate.' % len( fn_list ) )
             if len( fn_list ) == 0: return None

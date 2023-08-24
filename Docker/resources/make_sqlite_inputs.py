@@ -98,7 +98,6 @@ def make_sqlite_inputs(configfile,db_dir):
     :param db_dir:
     :return:
     '''
-    #db_dir = '/Users/janet/PycharmProjects/SHELLS/'
     configfile = 'config_test_shells_inputs_local.ini'
 
     # Create the dbase with the table and colnames
