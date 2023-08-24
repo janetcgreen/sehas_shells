@@ -30,7 +30,7 @@ def valid_date(s):
     try:
         test = dt.datetime.strptime(s, "%Y-%m-%d")
         return test
-    except:
+    except ValueError:
         pass
     try:
         test = dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
@@ -73,7 +73,6 @@ def fixed_files_shells(sdate=None,edate=None,realtime=False,
         edate=(sdate+dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         sdate=sdate.replace(minute=0, second=0, microsecond=0) # Force it to start on an hour
 
-    #edate = sdate+dt.timedelta(hours=24)
     tform = '%Y-%m-%dT%H:%M:%S.%fZ'
     # Step through in day increments
     while sdate<=last_edate:

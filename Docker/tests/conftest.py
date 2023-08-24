@@ -13,18 +13,10 @@ from app import create_app
 # https://flask.palletsprojects.com/en/2.3.x/tutorial/tests/
 @pytest.fixture
 def app():
-    #db_fd, db_path = tempfile.mkstemp()
 
     app = create_app(test_config="test_config")
 
-    #with app.app_context():
-    #    init_db()
-    #    get_db().executescript(_data_sql)
-
     yield app
-
-    #os.close(db_fd)
-    #os.unlink(db_path)
 
 @pytest.fixture
 def client(app):

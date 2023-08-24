@@ -119,6 +119,7 @@ class IOList(MethodView):
                 magephem_response["Bm"] = [[Bmirror]]*len(io_data["time"])
         else:
             resp = requests.post(url, json=magephem_input)
+            magephem_response = resp.json()
 
             # Check the response and if it gets a 500 or other errors
             # then it needs to exit
@@ -131,8 +132,6 @@ class IOList(MethodView):
                 else:
                     error_desc = "magephem error {}: {}".format(magephem_response['status'], magephem_response['title'])
                 return error_desc
-
-            magephem_response = resp.json()
 
         # Here we pass a list of times, a list of Ls for each time i.e. [[L1]],
         # and a list of [Bms] for each time [[Bm]]
@@ -197,10 +196,6 @@ class IOList(MethodView):
         # 2) list of [Lshells] to be used for all those times (ex[5,6])
         # 3) list of energies (to be used for all times) (ex [200,400,600] in keV)
         # 4) list of Bmirrors (to be used for all times) (ex [20,40])
-
-
-        # "MAGEPHEM" is defined in the .env file test and in the top dir
-        url = os.environ.get("MAGEPHEM")
 
         # In the other case we have a list of Ls and Bms for each time that are len(pitchangles)
         # In this case we have to replicate the L shells for each time

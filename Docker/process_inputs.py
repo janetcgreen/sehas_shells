@@ -54,11 +54,7 @@ def read_db_inputs(req_times):
         #print("Connecting to dbase")
         # Todo make this a parameter in the config
         dbname =os.environ.get('DBNAME')
-        #print(dbname)
-        #dbname = 'test_sehas_shells.sq'
         dbase = os.path.join(os.path.dirname( __file__ ), 'resources',dbname)
-        #print(dbase)
-        #conn = sl.connect('./resources/test_sehas_shells.sq')
         conn = sl.connect(dbase)
         cursor = conn.cursor()
 
@@ -71,21 +67,13 @@ def read_db_inputs(req_times):
             "ORDER BY time", (min(req_times), max(req_times), min(req_times)))
         rows1 = cursor.fetchall()
         input_times = [item[0] for item in rows1]
-        #print('input times: ', input_times)
 
         # Find the input poes position nearest to the requested times in the CCMC HAPI database
         nearest_pos = [get_nearest(input_times, t) for t in req_times]
-        #print(nearest_pos)
-
         rows = [rows1[x] for x in nearest_pos]
 
         # Get the actual times to make sure it works right
-        nearest_times = [input_times[x] for x in nearest_pos]
-
-
-        #print('input times: ', input_times)
-        #print('request times: ', req_times)
-        #print('nearest times: ', nearest_times)
+        #nearest_times = [input_times[x] for x in nearest_pos]
 
         # Read in the SHELLS input data for the range of nearest times
         #sql = "SELECT * FROM ShellsInputsTbl WHERE time IN ({seq})".format(seq=','.join(['?'] * len(nearest_times)))
@@ -94,7 +82,6 @@ def read_db_inputs(req_times):
 
         # Get the column names
         names = [description[0] for description in cursor.description]
-        # print(names)
 
         # Get the column number
         #cursor.execute("SELECT COUNT(*) FROM pragma_table_info('ShellsInputsTbl')")
@@ -112,7 +99,6 @@ def read_db_inputs(req_times):
     return names, rows
 
 def reorg_data(keys,rows,channels):
-    # List of the channels
 
     # Initialize map_data
     map_data = {}
@@ -136,10 +122,10 @@ def reorg_data(keys,rows,channels):
         Kp_max.append(row['Kp_max'])
 
     map_data['time'] = np.array(time_arr)
-    map_data['mep_ele_tel90_flux_e1'] = np.array(e1_arr)
-    map_data['mep_ele_tel90_flux_e2'] = np.array(e2_arr)
-    map_data['mep_ele_tel90_flux_e3'] = np.array(e3_arr)
-    map_data['mep_ele_tel90_flux_e4'] = np.array(e4_arr)
+    map_data[channels[0]] = np.array(e1_arr)
+    map_data[channels[1]] = np.array(e2_arr)
+    map_data[channels[2]] = np.array(e3_arr)
+    map_data[channels[3]] = np.array(e4_arr)
     map_data['Kp*10'] = Kp10
     map_data['Kp_max'] = Kp_max
 
@@ -280,10 +266,7 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                                         np.array(maxkp).reshape(-1, 1),
                                         poes), axis=1)
                 # This returns the lowerq, log(flux), upperq data for one E and Bmirror(L) at each L
-                # start=ti.time()
                 fpre = out_scale.inverse_transform(hdf5.predict(in_scale.transform(input),verbose=0))
-                # tend = ti.time()
-                # print('time to do nn',tend-start)
                 cols = ['E flux ' + str(int(Energies[eco])) + ' upper q',
                         'E flux ' + str(int(Energies[eco])),
                         'E flux ' + str(int(Energies[eco])) + ' lower q', ]
@@ -325,7 +308,7 @@ def process_data(time, Ls, Bmirrors, Energies):
         in_scale = load(os.environ.get('IN_SCALE_FILE'))
         hdf5 = keras.models.load_model(os.environ.get('HDF5FILE'), custom_objects={'loss': qloss}, compile=False)
 
-        # These are the POES electron fluxchannel names
+        # These are the POES electron flux channel names
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
 
         # Check if testing or no
