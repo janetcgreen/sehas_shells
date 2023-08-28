@@ -269,7 +269,7 @@ class test_process_shells_inputs(unittest.TestCase):
             test=1
         self.assertEqual(test,1)
 
-    def test_B_run_shells_reprocess_csv(self):
+    def test_A_run_shells_reprocess_csv(self):
         #==================================================================
         # TEST 6: Check csv file creation when running in reprocessing mode
         #==================================================================
@@ -309,7 +309,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         # Check that the file is created and has a certain length
 
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.csv'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.csv'
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         if len(flist)>0:
             with open(flist[0], 'r') as openfile:
@@ -324,7 +324,7 @@ class test_process_shells_inputs(unittest.TestCase):
             testit = 0
         self.assertEqual(1, testit)
 
-    def test_A_run_shells_reprocess_json(self):
+    def test_B_run_shells_reprocess_json(self):
         #==================================================================
         # TEST 7: Check json file creation when running in reprocessing mode
         #==================================================================
@@ -346,7 +346,7 @@ class test_process_shells_inputs(unittest.TestCase):
         # Read the config file to get the filename
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
         # Check if a testfile exists and delete it
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.json'
         flist = glob.glob(os.path.join(os.getcwd(),fbase))
         if len(flist)>1:
             os.remove(flist[0])
@@ -365,7 +365,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         # Check that the file is created and has a certain length
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.json'
         flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
@@ -418,7 +418,7 @@ class test_process_shells_inputs(unittest.TestCase):
                           self.configfile,'SHELLS_TESTING_JSON')
 
         # Now read the file created above
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.json'
         flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
@@ -491,9 +491,10 @@ class test_process_shells_inputs(unittest.TestCase):
         outdir = self.test_dir
         sat = 'n15'
         sdate =(dt.datetime.utcnow()-dt.timedelta(days=2))
+        edate = (dt.datetime.utcnow()-dt.timedelta(days=1))
         cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         # This should add a file for the day before
-        pr.process_SHELLS(sdate, sdate,
+        pr.process_SHELLS(sdate, edate,
                           False, False, None, outdir, cdfdir,
                           "www.ncei.noaa.gov", ["n15"],
                           ['time', 'alt', 'lat', 'lon', 'L_IGRF', 'MLT',
@@ -506,7 +507,8 @@ class test_process_shells_inputs(unittest.TestCase):
 
         # Get the last processed time for the file
         dformat = '%Y%m%d'
-        fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
+        #fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
+        fbase = cdict['fname'] + '_'  + '*.csv'
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         flist.sort(reverse=True)
         dat = pd.read_csv(flist[0]).to_dict(orient='list')

@@ -84,7 +84,7 @@ def fixed_files_shells(sdate=None,edate=None,realtime=False,
         #print(times_form)
 
         # Specify the CSV file name
-        fname = f"shells_fixed_{times[-1].strftime('%Y%m%dT%H%M')}.json"
+        fname = f"shells_fixed_{times[-1].strftime('%Y%m%d')}.json"
 
         # We need to use functionality that requires an application context
         # Set up an application context with app.app_context()
