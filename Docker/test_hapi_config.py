@@ -1,7 +1,7 @@
 DEBUG = True
 PROPAGATE_EXCEPTIONS = True
 TESTING = True
-HAPI_TEST = False
+HAPI_TEST = True
 TESTL = 4
 DBNAME = "test_sehas_shells.sq"
 API_TITLE = "SHELLS REST API"

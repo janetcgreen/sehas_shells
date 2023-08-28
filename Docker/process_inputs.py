@@ -2,11 +2,16 @@ import logging
 import os
 import sqlite3 as sl
 from bisect import bisect_right
+
+import requests
 from flask import current_app
 import keras
 import numpy as np
 from joblib import load
 from flask import current_app
+import datetime as dt
+import requests
+from hapiclient import hapi
 
 
 def qloss(y_true, y_pred):
@@ -30,7 +35,6 @@ def get_nearest(list_dt, dt):
 
     pos = bisect_right(list_dt, dt)
 
-
     if pos == 0:
         return 0
     if pos == len(list_dt):
@@ -38,7 +42,83 @@ def get_nearest(list_dt, dt):
 
     return pos-1
 
+def read_hapi_inputs(req_times,server,dataset):
+    '''
+    PURPOSE: To get the hapi data from the CCMC iswa server at server for
+    the shells_input dataset for the reqested times
+    :param req_times: A list of times to return input data from
+    :param server: The server name i.e. 'https://iswa.ccmc.gsfc.nasa.gov/IswaSystemWebApp/hapi/'
+    :param dataset the dataset name i.e. shell_input
+    :return:
+    '''
 
+    # Create a dictionary with info to build the hapi query
+    hinput = {}
+    hinput['id'] = dataset
+
+    # reformat the start and stop datetimes into HAPI times
+    # Get data from 3 hours before the first requested time so it has a value prior
+    hinput['time.min'] = (dt.datetime.strptime(req_times[0],'%Y-%m-%dT%H:%M:%S.%fZ') - dt.timedelta(hours=3)).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+    hinput['time.max'] = req_times[-1]
+    hinput['format']='json'
+
+    # Build the hapi query
+    query = server+'data?'
+    for key in list(hinput.keys()):
+        query= query+key+'='+hinput[key]+'&'
+
+    iswa_data = requests.get(query[0:-1]) # query will have an extra &
+    hapi_data = {} # dict for refromatting the returned data
+
+    # Check that ther was a valid response
+    if iswa_data.status_code==200:
+
+        # Get a list of the col names
+        iswa_json= iswa_data.json()
+        cols = [x['name'] for x in iswa_json['parameters']]
+        cdata= np.array(iswa_json['data']) # Make an array because it is simpler to work with
+
+        # iswa_json['data'] is a list of lists
+        # The next step needs the data as a dict with 'time,
+        # 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4', 'Kp*10', 'Kp_max'
+        if len(cdata)>0:
+            hapi_data['time'] = cdata[:,cols.index('Time')] # Change the time column capital
+            #map_data['time']=[x[cols.index('Time')] for x in iswa_json['data']]
+            hapi_data['Kp*10'] = cdata[:, cols.index('kp10')].astype(float) # Change the k
+            #map_data['Kp*10'] = [x[cols.index('kp10')] for x in iswa_json['data']]
+            hapi_data['Kp_max'] = cdata[:, cols.index('kp_3day_max')].astype(float)
+            #map_data['Kp_max'] = [x[cols.index('kp_3day_max')] for x in iswa_json['data']]
+
+            # Todo fix this when we have the changes
+            # Right now the hapi server returns the columns with the worng names
+            ecols = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
+            for ecol in ecols:
+                # Need to reformat data to have time X L
+                alles = [x for x in cols if ecol in x]
+                allinds= [cols.index(x) for x in alles]
+                hapi_data[ecol]=cdata[:,allinds].astype(iswa_json['parameters'][allinds[0]]['type'])
+        else:
+            hapi_data= None
+    else:
+        hapi_data = None
+
+    return hapi_data
+
+def reorg_hapi(in_times,hdata):
+    '''
+
+    :param in_time:
+    :param hdata:
+    :return:
+    '''
+    nearest_pos = np.array([get_nearest(list(hdata['time']),t) for t in in_times])
+    map_data={}
+    for key in hdata.keys():
+        if len(np.shape(hdata[key]))>1:
+            map_data[key] = hdata[key][nearest_pos,:]
+        else:
+            map_data[key] = hdata[key][nearest_pos]
+    return map_data
 def read_db_inputs(req_times):
     '''
 
@@ -76,9 +156,9 @@ def read_db_inputs(req_times):
         #nearest_times = [input_times[x] for x in nearest_pos]
 
         # Read in the SHELLS input data for the range of nearest times
-        #sql = "SELECT * FROM ShellsInputsTbl WHERE time IN ({seq})".format(seq=','.join(['?'] * len(nearest_times)))
-        #cursor.execute(sql, nearest_times)
-        #rows = cursor.fetchall()
+        # sql = "SELECT * FROM ShellsInputsTbl WHERE time IN ({seq})".format(seq=','.join(['?'] * len(nearest_times)))
+        # cursor.execute(sql, nearest_times)
+        # rows = cursor.fetchall()
 
         # Get the column names
         names = [description[0] for description in cursor.description]
@@ -313,16 +393,33 @@ def process_data(time, Ls, Bmirrors, Energies):
 
         # Check if testing or no
         if current_app.testing==True:
-            # In testing mode read the poes data from an sqlite dbase
-            keys, rows = read_db_inputs(time)
-            # This reorganizes the data from the dbase
-            map_data = reorg_data(keys,rows,channels)
+            if current_app.config['HAPI_TEST']==False:
+                # In testing mode read the poes data from an sqlite dbase
+                keys, rows = read_db_inputs(time)
+                # This reorganizes the data from the dbase into a dict
+                # These are all numpy arrays
+                map_data = reorg_data(keys,rows,channels)
+                print('Here')
+            else:
+                server = os.environ.get('HAPI_SERVER')
+                dataset = os.environ.get('HAPI_DATASET')
+                hapi_data = read_hapi_inputs(time, server, dataset)
+
+                # get the closest hapi data to the times in time
+                map_data = reorg_hapi(time,hapi_data)
+                #nearest_pos = [get_nearest(input_times, t) for t in req_times]
+                #map_data = reorg_data(keys, rows, channels)
+
         else:
-            # Todo This should read from CCMC HAPI dbase
             # In testing mode read the data from an sqlite dbase
-            keys, rows = read_db_inputs(time)
-            # This reorganizes the data from the dbase
-            map_data = reorg_data(keys, rows, channels)
+            # https://iswa.ccmc.gsfc.nasa.gov/IswaSystemWebApp/hapi/data?id=shell_input&time.min=2023-08-17T00:00:00.0Z&time.max=2023-08-18T00:00:00.0Z&format=json
+
+            server = os.environ.get('HAPI_SERVER')
+            dataset = os.environ.get('HAPI_DATASET')
+            hapi_data = read_hapi_inputs(time, server, dataset)
+
+            # get the closest hapi data to the times in time
+            map_data = reorg_hapi(time, hapi_data)
 
         # Replace map_data['time'] with the requested times
         map_data['time'] = time
