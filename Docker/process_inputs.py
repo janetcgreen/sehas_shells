@@ -91,11 +91,10 @@ def read_hapi_inputs(req_times,server,dataset):
 
             # Todo fix this when we have the changes
             # Right now the hapi server returns the columns with the worng names
-            ecolscc = ['map_ele_tel90_flux_e1', 'map_ele_tel90_flux_e2', 'map_ele_tel90_flux_e3', 'map_ele_tel90_flux_e4']
             ecols = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
-            for ecolcc,ecol in zip(ecolscc,ecols):
+            for ecol in ecols:
                 # Need to reformat data to have time X L
-                alles = [x for x in cols if ecolcc in x]
+                alles = [x for x in cols if ecol in x]
                 allinds= [cols.index(x) for x in alles]
                 hapi_data[ecol]=cdata[:,allinds].astype(iswa_json['parameters'][allinds[0]]['type'])
         else:
