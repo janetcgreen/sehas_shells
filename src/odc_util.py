@@ -94,7 +94,7 @@ def KL2alpha(K,L,Bunit='nT'):
         table['Yy'] = SL_Y(table['y'])/table['y']
     if Bunit=='G':
         K = K*np.sqrt(1e5) # RE*sqrt(G) to RE*sqrt(nT)
-
+    # K*sqrt(L)/sqrt(B0) = Y(y)/y
     KLB = K*np.sqrt(L)/np.sqrt(SL['B0']*1e9)
     y = np.interp(KLB,_KL2alpha_table['y'],_KL2alpha_table['Yy'],KLB)
     alpha = np.arcsin(y)
@@ -174,6 +174,7 @@ def dipole_mirror_latitude(alpha0,units = 'deg'):
     for i in range(len(sina0)):
         Px = [1, 0, 0, 0, 0, 3*sina0[i]**4, -4*sina0[i]**4]
         xroots = np.roots(Px)
+        #xroot = xroots((imag(xroots)==0) & (real(xroots)>0))
         xroot = xroots[(np.abs(xroots.imag)<1e-30) & (xroots.real>0)]        
         mirror_lat[i] = np.degrees(np.arccos(np.sqrt(xroot))) # mirror latitude
     return mirror_lat
@@ -255,6 +256,7 @@ def BouncePeriod(Species,Energy,PitchAngle,L,unit='deg'):
     """
 
     a = SL['a'] # Earth Radius, meters
+    #y = sind(PitchAngle);
     if unit.lower().startswith('d'):
         y = np.sin(np.radians(PitchAngle))
     elif unit.lower().startswith('r'):
@@ -281,7 +283,7 @@ def GyroPeriod(Species,Energy,MagLat,L):
     q = mks[Species]['q'] # C
     (gamma,v,m) = MeVtogamma(Energy,Species)
 
-    B = dipoleB(L,MagLat)/1e9 # T
+    B = dipoleB(L,MagLat,0)/1e9 # T
 
     f = abs(q)*B/(2*np.pi*m) # no "c" in denominator in SI units
     Tg = 1./f

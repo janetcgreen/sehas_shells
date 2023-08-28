@@ -54,9 +54,10 @@ class test_GPS_shells(unittest.TestCase):
         print('*** TEST 1: Check that get_TLES returns a value')
         group = "GPS-OPS"
         format = "TLE"
+        tlefname = 'test_tles_'
         celes_url = "https://celestrak.org/NORAD/elements/gp.php"
         sat = "PRN 32"
-        tle1, tle2 = mgs.get_TLES(celes_url, group, format, sat)
+        tle1, tle2 = mgs.get_TLES(celes_url, group, format, sat,tlefname)
         if tle1 is not None:
             success = 1
 
@@ -70,9 +71,10 @@ class test_GPS_shells(unittest.TestCase):
         print('*** TEST 2: Check that get_TLES returns none for bad request')
         group = "GPS-OPS"
         format = "TLE"
+        tlefname = 'test_tles_'
         celes_url = "https://celestrak.org/NORAD//gp.php"
         sat = "PRN 325"
-        tle1, tle2 = mgs.get_TLES(celes_url, group, format, sat)
+        tle1, tle2 = mgs.get_TLES(celes_url, group, format, sat,tlefname)
         if tle1 is None:
             success = 1
 

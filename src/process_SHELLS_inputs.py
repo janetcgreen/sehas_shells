@@ -783,7 +783,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                     #    sdate = find_s3_last_time(cdict, 'shells_*.nc')
                     if cdict['input_type']=='sqlite':
                         # Get the last processed data time from an sql dbase
-                        sdate = get_start_rt(cdict, sat)
+                        sdate = get_start_rt(outdir,cdict, sat)
                     elif cdict['input_type'] =='hapi':
                         # Get the last processed data time from a hap server
                         sdate = get_start_rt_hapi(cdict,sat) # Reads last processed from hapi

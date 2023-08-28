@@ -98,7 +98,7 @@ def make_sqlite_inputs(configfile,db_dir):
     :param db_dir:
     :return:
     '''
-    configfile = 'config_test_shells_inputs_local.ini'
+    # configfile = 'config_test_shells_inputs_local.ini'
 
     # Create the dbase with the table and colnames
     make_dB(configfile, db_dir)
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('This program gets POES data from NOAA and processes it for SHELLS')
     parser.add_argument('-c', "--config",
                         help="The full directory and name of the config file",
-                        default = os.path.join(os.getcwd(),'shells_config.ini'),
+                        default = os.path.join(os.getcwd(),'config_test_shells_inputs_local.ini'),
                         required=False)
     parser.add_argument('-od', "--outdir",
                         help="The local directory to put the output files",

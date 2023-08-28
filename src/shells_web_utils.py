@@ -31,12 +31,21 @@ import sqlite3 as sl
 #sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
 import poes_utils as pu
 from scipy.interpolate import NearestNDInterpolator
+#import data_utils as du
+#import time as ti
 
 log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logger = logging.getLogger(__name__)
 
 # To override the default severity of logging
 logger.setLevel('INFO')
+
+#def my_handler(type, value, tb):
+#    logger.exception("Uncaught exception: {0}".format(str(value)))
+
+# Install exception handler
+#sys.excepthook = my_handler
+
 
 def read_config(configfile,section):
     '''

@@ -32,7 +32,7 @@ def valid_date(s):
     try:
         test = dt.datetime.strptime(s, "%Y-%m-%d")
         return test
-    except ValueError:
+    except:
         pass
     try:
         test = dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
@@ -134,7 +134,11 @@ def getLpass(L,dist=200,prom=.5):
     # gives weird results
     peaks = find_peaks(Ldata[goodinds],distance=dist,prominence=prom) # Find the maxima
     valleys = find_peaks(-1*(Ldata[goodinds]),distance=dist,prominence=prom) # Find the minima
+    #plt.plot(L.data[goodinds])
+    #plt.plot(peaks[0],L.data[goodinds[peaks[0]]],'*')
+    #plt.plot(valleys[0], L.data[goodinds[valleys[0]]], '+')
     allbreaks = np.sort(np.append(goodinds[peaks[0]], goodinds[valleys[0]]))
+    #pbreaks = 0 * Ldata
     pbreaks = np.zeros((len(Ldata)),dtype=float)
     pbreaks[allbreaks] = 1
     passes = np.cumsum(pbreaks)
@@ -373,6 +377,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
             #z = (z+zmin)/2000
             npoints = int(60 / tstep) # SEt passes to one hour
             passes = [int(x/npoints) for x in range(0,len(shdata['time']))]
+            #passes, breaks = getLpass(z,dist=npoints)
         else:
             # getLpass looks for peaks and valleys
             # dist is the number of points away that something has to be to
@@ -393,7 +398,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
         for co,key in enumerate(ekeys):
             # Todo check what squeeze does to 2 D array
             data[co+1,:] = np.array(shdata[key][:]).squeeze()
-
+        #data = np.array(shdata[ekeys[0]]).squeeze()
         bin_data = stats.binned_statistic_2d(np.array(shdata['L']).squeeze(), passes, data, statistic=np.nanmean, bins=[xbin, ybin])
         # make a plot with up to 4 energies
 

@@ -83,11 +83,8 @@ def read_hapi_inputs(req_times,server,dataset):
         # 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4', 'Kp*10', 'Kp_max'
         if len(cdata)>0:
             hapi_data['time'] = cdata[:,cols.index('Time')] # Change the time column capital
-            #map_data['time']=[x[cols.index('Time')] for x in iswa_json['data']]
             hapi_data['Kp*10'] = cdata[:, cols.index('kp10')].astype(float) # Change the k
-            #map_data['Kp*10'] = [x[cols.index('kp10')] for x in iswa_json['data']]
             hapi_data['Kp_max'] = cdata[:, cols.index('kp_3day_max')].astype(float)
-            #map_data['Kp_max'] = [x[cols.index('kp_3day_max')] for x in iswa_json['data']]
 
             # Todo fix this when we have the changes
             # Right now the hapi server returns the columns with the worng names
