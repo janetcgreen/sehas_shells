@@ -1,6 +1,6 @@
-projectKey=shells_3
+projectKey=shells_5
 serverUrl=http://localhost:9000
 serverVersion=10.1.0.73491
-dashboardUrl=http://localhost:9000/dashboard?id=shells_3
-ceTaskId=AYo9rfcbLZ04M-VOwFlE
-ceTaskUrl=http://localhost:9000/api/ce/task?id=AYo9rfcbLZ04M-VOwFlE
+dashboardUrl=http://localhost:9000/dashboard?id=shells_5
+ceTaskId=AYpCbcSbLZ04M-VOwFuU
+ceTaskUrl=http://localhost:9000/api/ce/task?id=AYpCbcSbLZ04M-VOwFuU

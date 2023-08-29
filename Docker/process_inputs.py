@@ -83,14 +83,9 @@ def read_hapi_inputs(req_times,server,dataset):
         # 'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4', 'Kp*10', 'Kp_max'
         if len(cdata)>0:
             hapi_data['time'] = cdata[:,cols.index('Time')] # Change the time column capital
-            #map_data['time']=[x[cols.index('Time')] for x in iswa_json['data']]
             hapi_data['Kp*10'] = cdata[:, cols.index('kp10')].astype(float) # Change the k
-            #map_data['Kp*10'] = [x[cols.index('kp10')] for x in iswa_json['data']]
             hapi_data['Kp_max'] = cdata[:, cols.index('kp_3day_max')].astype(float)
-            #map_data['Kp_max'] = [x[cols.index('kp_3day_max')] for x in iswa_json['data']]
 
-            # Todo fix this when we have the changes
-            # Right now the hapi server returns the columns with the worng names
             ecols = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
             for ecol in ecols:
                 # Need to reformat data to have time X L
@@ -131,8 +126,7 @@ def read_db_inputs(req_times):
 
     try:
         # Connect to the dbase
-        #print("Connecting to dbase")
-        # Todo make this a parameter in the config
+
         dbname =os.environ.get('DBNAME')
         dbase = os.path.join(os.path.dirname( __file__ ), 'resources',dbname)
         conn = sl.connect(dbase)
@@ -342,17 +336,16 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
             for eco in range(0, len(Energies)):
                 # Make a list of one energy at all Bm's
                 energy = np.tile(Energies[eco], Bw)
-                input = np.concatenate((np.array(energy).reshape(-1, 1), np.array(Bthis).reshape(-1, 1),
+                nn_input = np.concatenate((np.array(energy).reshape(-1, 1), np.array(Bthis).reshape(-1, 1),
                                         np.array(Lthis).reshape(-1, 1), np.array(kp).reshape(-1, 1),
                                         np.array(maxkp).reshape(-1, 1),
                                         poes), axis=1)
                 # This returns the lowerq, log(flux), upperq data for one E and Bmirror(L) at each L
-                fpre = out_scale.inverse_transform(hdf5.predict(in_scale.transform(input),verbose=0))
+                fpre = out_scale.inverse_transform(hdf5.predict(in_scale.transform(nn_input),verbose=0))
                 cols = [colstart + str(int(Energies[eco])) + ' upper q',
                         colstart + str(int(Energies[eco])),
                         colstart + str(int(Energies[eco])) + ' lower q', ]
                 for cco in range(0, len(cols)):
-                    # Todo check if this works for multiple Bms
                     # If there is multiple Bms then each energy channel will be [timeXBm]
                     temp = outdat[cols[cco]][:] # Get the current data for that energy col
                     #Todo set Ls>6.3 to nan

@@ -16,10 +16,6 @@ import pandas as pd
 import tempfile
 import csv
 
-#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
-#sys.path.insert(1, '/efs/spamstaging/live/chargehaz/')
-#import shells_web_utils as swu
-
 class test_GPS_shells(unittest.TestCase):
     # PURPOSE: To test make_GPS_shells that creates shells output and plots
     # of electron fluxes along a GPS satellite
@@ -53,11 +49,11 @@ class test_GPS_shells(unittest.TestCase):
 
         print('*** TEST 1: Check that get_TLES returns a value')
         group = "GPS-OPS"
-        format = "TLE"
+        tformat = "TLE"
         tlefname = 'test_tles_'
         celes_url = "https://celestrak.org/NORAD/elements/gp.php"
         sat = "PRN 32"
-        tle1, tle2 = mgs.get_TLES(celes_url, group, format, sat,tlefname)
+        tle1, tle2 = mgs.get_TLES(celes_url, group, tformat, sat,tlefname)
         if tle1 is not None:
             success = 1
 
@@ -70,11 +66,11 @@ class test_GPS_shells(unittest.TestCase):
 
         print('*** TEST 2: Check that get_TLES returns none for bad request')
         group = "GPS-OPS"
-        format = "TLE"
+        tformat = "TLE"
         tlefname = 'test_tles_'
         celes_url = "https://celestrak.org/NORAD//gp.php"
         sat = "PRN 325"
-        tle1, tle2 = mgs.get_TLES(celes_url, group, format, sat,tlefname)
+        tle1, tle2 = mgs.get_TLES(celes_url, group, tformat, sat,tlefname)
         if tle1 is None:
             success = 1
 
@@ -92,25 +88,25 @@ class test_GPS_shells(unittest.TestCase):
         tstep=5
         oname = 'GPS_SHELLS_test_'
         fname = oname+str(ndays)+'day.txt'
-        file = glob.glob(os.path.join(odir,fname))
+        ofile = glob.glob(os.path.join(odir,fname))
 
         # If a test file exists then delete it
-        if len(file)>0:
-            os.remove(file[0])
+        if len(ofile)>0:
+            os.remove(ofile[0])
 
-        sh_url = 'http://172.17.0.3:5005/shells_io/'
+        sh_url = 'http://sehas:5005/shells_io/'
 
         # This should create the file s.path.join(odir,fname)
         mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
                         Es=[500, 2000], outdir=os.getcwd(),outname =oname, testing=1)
 
-        file = glob.glob(os.path.join(odir, fname))
+        ofile = glob.glob(os.path.join(odir, fname))
 
-        if len(file)>0:
+        if len(ofile)>0:
             # If the file is there then check that it is the right len
             # and has the right start time
             scheck = dt.datetime.utcnow()
-            df = pd.read_csv(file[0])
+            df = pd.read_csv(ofile[0])
             odict = df.to_dict(orient='list')
             last = dt.datetime.strptime(odict['time'][-1],'%Y-%m-%dT%H:%M:%S.%fZ')
             tdiff=np.abs(((last - scheck).total_seconds()) / 60)
@@ -134,26 +130,27 @@ class test_GPS_shells(unittest.TestCase):
         tstep=10
         oname = 'GPS_SHELLS_test_'
         fname = oname+str(ndays)+'day.txt'
-        file = glob.glob(os.path.join(odir,fname))
+        ofile = glob.glob(os.path.join(odir,fname))
         # If a test file exists then delete it
-        if len(file)>0:
-            os.remove(file[0])
+        if len(ofile)>0:
+            os.remove(ofile[0])
 
-        sh_url = 'http://172.17.0.3:5005/shells_io/'
+        sh_url = 'http://sehas:5005/shells_io/'
 
         # This should create the file s.path.join(odir,fname)
         mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
                         Es=[500, 2000], outdir=odir,outname =oname, testing=1)
 
-        file = glob.glob(os.path.join(odir, fname))
+        ofile = glob.glob(os.path.join(odir, fname))
+        dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
 
-        if len(file)>0:
+        if len(ofile)>0:
             # subtract a few lines and write out again
-            df = pd.read_csv(file[0])
+            df = pd.read_csv(ofile[0])
             odict = df.to_dict(orient='list')
             lind = int((len(odict['time'])-120/tstep)) # take off 2 hours
 
-            lasttime = dt.datetime.strptime(odict['time'][lind],'%Y-%m-%dT%H:%M:%S.%fZ')
+            lasttime = dt.datetime.strptime(odict['time'][lind],dformat)
             ekeys = [x for x in list(odict.keys()) if ('E flux' in x)]
             Bkeys = [x for x in list(odict.keys()) if ('Bmirrors' in x)]
             skeys = ['time', 'L'] + ekeys + Bkeys
@@ -169,11 +166,13 @@ class test_GPS_shells(unittest.TestCase):
             mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
                                 Es=[500, 2000], outdir=os.getcwd(), outname=oname, testing=1)
 
-            df = pd.read_csv(file[0])
+            df = pd.read_csv(ofile[0])
             odict = df.to_dict(orient='list')
 
-            if dt.datetime.strptime(odict['time'][-1],'%Y-%m-%dT%H:%M:%S.%fZ')>lasttime:
+            if dt.datetime.strptime(odict['time'][-1],dformat)>lasttime:
                 success=1
+            else:
+                success =0
 
         self.assertEqual(1, success)
 

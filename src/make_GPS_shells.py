@@ -360,7 +360,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
             writer = csv.writer(csvfile)
             writer.writerow(skeys)
             for ico in range(0,len(fdata['time'][:])):
-                if dt.datetime.strptime(fdata['time'][ico],'%Y-%m-%dT%H:%M:%S.%fZ')>fsdate:
+                if dt.datetime.strptime(fdata['time'][ico],tform)>fsdate:
                     row1 = [fdata['time'][ico],fdata['L'][ico]] # Time and L
                     row2 = ["{0:.5f}".format(fdata[k][ico]) for k in skeys[2::]]
                     row = row1+row2
@@ -394,7 +394,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
         # We need time in ctime in order to get the average time of each pass after binning
         # In theory this should create the datetime for the string, make it utc and then get a timestamp
         # So when we go back to datetime with utcfromtimestamp it should still be the same
-        data[0,:] = [dt.datetime.strptime(x,'%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=dt.timezone.utc).timestamp() for x in shdata['time'][:]]
+        data[0,:] = [dt.datetime.strptime(x,tform).replace(tzinfo=dt.timezone.utc).timestamp() for x in shdata['time'][:]]
         for co,key in enumerate(ekeys):
             # Todo check what squeeze does to 2 D array
             data[co+1,:] = np.array(shdata[key][:]).squeeze()

@@ -65,6 +65,7 @@ def satname_to_satID(satname):
     sats = ['n15','n16','n17','n18','n19','m01','m02','m03']
     IDS = [4,2,6,7,8,11,12,13]
     return IDS[sats.index(satname)]
+
 def satID_to_satname( satID ):
 
     '''
@@ -912,7 +913,8 @@ def read_poes_bin(filename, datatype='raw', procvars=None):
                    ted0eflux_cols + ted30eflux_cols + ['microA_V', 'microB_V', 'DPU_V', 'MEPED_V',
                     'ted_V', 'ted_sweepV', 'ted_electron_CEM_V','ted_proton_CEM_V', 'mep_omni_biase_V',
                      'mep_circuit_temp', 'mep_proton_tel_temp', 'TED_temp','DPU_temp', 'HK_data',
-                    'HK_key', 'ted_ele_PHD_level', 'ted_pro_PHD_level','ted_IFC_on', 'mep_IFC_on', 'ted_ele_HV_step','ted_pro_HV_step']
+                    'HK_key', 'ted_ele_PHD_level', 'ted_pro_PHD_level','ted_IFC_on', 'mep_IFC_on',
+                    'ted_ele_HV_step','ted_pro_HV_step']
         return {k: np.array(data[k]) for k in raw_cols}
     else:
         # If processed data is requested then calibrations are needed to change counts to flux
@@ -1738,18 +1740,11 @@ def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=Tru
                         nc_day =  None
                 else:
                     # If it is local then read the nc file
-                    try:
-                        nc_day = nc4.Dataset( fn, 'r' )
-                    except:
-                        nc_day = None
+                    nc_day = nc4.Dataset( fn, 'r' )
 
                 # Make sure there is data for that day
                 if nc_day is not None:
-                    # One file does not have 'mep_IFC_on' for some reason
-                    if 'mep_IFC_on' in list(nc_day.variables.keys()):
-                        idx_ifc = np.where(nc_day['mep_IFC_on'][:] > 0)[0]
-                    else:
-                        idx_ifc = []
+                    idx_ifc = np.where(nc_day['mep_IFC_on'][:] > 0)[0]
                     # Only return requested variables
                     if vars:
                         varlist = vars
@@ -1777,7 +1772,7 @@ def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=Tru
                                 nc_all[vname]=np.append( nc_all[vname][:],var_day_fixed[:])
                             else:
                                 nc_all[vname] =  var_day_fixed[:]
-                    print(fn)
+                            
                     nc_day.close()
             else:
                 #If it is bin file then open with read_POES_bin
@@ -1809,7 +1804,7 @@ def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=Tru
                             nc_all[vname] = np.append(nc_all[vname][:], pdata[vname][:])
                         else:
                             nc_all[vname] = pdata[vname][:]
-                    print(fn)
+
                     if fn=='temp.bin':
                         os.remove(fn)
         # Return nc_all dict:
@@ -1885,7 +1880,7 @@ def get_data_swpc_avg( dataloc, sat_name, dt_start, dt_end, clobber=False ):
             ''' ---------- List of Files to Ingest ------------------ '''
             # File name pattern we need to look for (data are organized as day files):
             dtype='avg'
-            fn_list = get_file_list(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_dir_root_list=[])
+            fn_list = get_file_list(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_root_list=[])
 
             #logger.debug( 'Found %d files to aggregate.' % len( fn_list ) )
             if len( fn_list ) == 0: return None
@@ -2217,7 +2212,11 @@ def make_sar(datacdf, Lvals,lonvals,rvals,bwidth,lon,sat ):
                         if alt ==0:
                             print('Here"')
 
+
+
     return fluxref, cdfgrid
+
+    print('Here')
 
 def datetimeFromFields( year, month, day, hhmm ) :
 

@@ -18,10 +18,6 @@ import pandas as pd
 import tempfile
 import shutil
 
-#sys.path.insert(1, '/Users/janet/PycharmProjects/common/')
-#sys.path.insert(1, '/efs/spamstaging/live/chargehaz/')
-#import shells_web_utils as swu
-
 class test_process_shells_inputs(unittest.TestCase):
     # PURPOSE: To test process_shells_inputs that gets poes data ready for shells model
     # The default is for my local config files
@@ -290,7 +286,8 @@ class test_process_shells_inputs(unittest.TestCase):
 
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_CSV')
         # Check if a testfile exists and delete it
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.csv'
+        ftype = '*.csv'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+ftype
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         if len(flist)>1:
             os.remove(flist[0])
@@ -309,7 +306,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         # Check that the file is created and has a certain length
 
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.csv'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+ftype
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         if len(flist)>0:
             with open(flist[0], 'r') as openfile:
@@ -346,11 +343,12 @@ class test_process_shells_inputs(unittest.TestCase):
         # Read the config file to get the filename
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
         # Check if a testfile exists and delete it
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.json'
+        ftype = '*.json'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+ftype
         flist = glob.glob(os.path.join(os.getcwd(),fbase))
         if len(flist)>1:
             os.remove(flist[0])
-        #cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdf')
+
         cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')
         pr.process_SHELLS(dt.datetime(2022,1,1),dt.datetime(2022,1,1),
                           False, False, None, self.test_dir, cdfdir,
@@ -365,7 +363,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         # Check that the file is created and has a certain length
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.json'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+ftype
         flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
@@ -400,7 +398,8 @@ class test_process_shells_inputs(unittest.TestCase):
         # Delete any old testing files. This won't delete good files because
         # fname has test in it
         cdict,dbtype = swu.read_config(self.configfile,'SHELLS_TESTING_JSON')
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+'*.json'
+        ftype ='*.json'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%dT')+ftype
         flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
@@ -418,7 +417,8 @@ class test_process_shells_inputs(unittest.TestCase):
                           self.configfile,'SHELLS_TESTING_JSON')
 
         # Now read the file created above
-        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+'*.json'
+        fbase = cdict['fname']+'_'+dt.datetime(2022,1,1).strftime('%Y%m%d')+ftype
+
         flist = glob.glob(os.path.join(self.test_dir,fbase))
 
         if len(flist)>0:
@@ -506,9 +506,8 @@ class test_process_shells_inputs(unittest.TestCase):
                           self.configfile, 'SHELLS_TESTING_RT')
 
         # Get the last processed time for the file
-        dformat = '%Y%m%d'
-        #fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
-        fbase = cdict['fname'] + '_'  + '*.csv'
+        ftype = '*.csv'
+        fbase = cdict['fname'] + '_'  + ftype
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         flist.sort(reverse=True)
         dat = pd.read_csv(flist[0]).to_dict(orient='list')
@@ -531,10 +530,8 @@ class test_process_shells_inputs(unittest.TestCase):
         # Get the last processed time for the file
         # This might fail if you run it at 1:00 UT because there might
         # not be new data
-        dformat = '%Y%m%d'
-        #sdate = dt.datetime.utcnow()
-        #fbase = cdict['fname']+'_'+sdate.strftime(dformat)+'*.csv'
-        fbase = cdict['fname']+'_'+'*.csv'
+
+        fbase = cdict['fname']+'_'+ftype
         flist = glob.glob(os.path.join(self.test_dir,fbase))
         flist.sort(reverse=True)
         dat = pd.read_csv(flist[0]).to_dict(orient='list')
@@ -548,7 +545,7 @@ class test_process_shells_inputs(unittest.TestCase):
 
         # Now cleanup
 
-        fbase = cdict['fname']+'_'+'*.csv'
+        fbase = cdict['fname']+'_'+ftype
         flist = glob.glob(os.path.join(self.test_dir, fbase))
         for file in flist:
             os.remove(file)
