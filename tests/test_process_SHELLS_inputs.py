@@ -489,7 +489,6 @@ class test_process_shells_inputs(unittest.TestCase):
 
         cdict, dbtype = swu.read_config(self.configfile, 'SHELLS_TESTING_RT')
         outdir = self.test_dir
-        sat = 'n15'
         sdate =(dt.datetime.utcnow()-dt.timedelta(days=2))
         edate = (dt.datetime.utcnow()-dt.timedelta(days=1))
         cdfdir = os.path.join(os.getcwd(), '..', 'SHELLS', 'cdfits')

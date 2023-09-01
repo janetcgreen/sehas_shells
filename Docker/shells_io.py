@@ -44,9 +44,9 @@ class IOList(MethodView):
         The keys of the dictionary correspond to electron flux for each energy requested
         along with the upper and lower quartiles<br>
         Example keys:<br>
-        - 'E flux 500': [timeX pitch_angles]
-        - 'E flux 500 upper': [timeX pitch_angles]
-        - 'E flux 500 lower': [timeX pitch_angles]
+        - 'E flux': [time,pitch_angles,energies]
+        - 'upper q': [time, pitch_angles,energies]
+        - 'lower q': [time, pitch_angles, energies]
         """
 
         # The post method takes times, locations, pitch angles in io_data,
@@ -118,6 +118,7 @@ class IOList(MethodView):
             else:
                 magephem_response["Bm"] = [[Bmirror]]*len(io_data["time"])
         else:
+
             resp = requests.post(url, json=magephem_input)
             magephem_response = resp.json()
 
@@ -137,6 +138,7 @@ class IOList(MethodView):
         # and a list of [Bms] for each time [[Bm]]
         # Bm and L will have multiple values if multiple pitch angles are requested
         # and the list of energies requested
+        print('Processing data')
         output = pi.process_data(io_data["time"], magephem_response["L"], magephem_response["Bm"], io_data["energies"])
 
         # The output will be a json dict
@@ -145,7 +147,7 @@ class IOList(MethodView):
         # return the user reqested pitch angles as well
         output['pitch_angles']= io_data["pitch_angles"]
         output['L'] = magephem_response["L"]
-        output['Bmirror'] = magephem_response["Bm"]
+        #output['Bmirror'] = magephem_response["Bm"]
 
         # Write Pretty-Print JSON data to file
         #with open("output.json", "w") as write_file:
@@ -181,9 +183,9 @@ class IOList(MethodView):
         The keys of the dictionary correspond to electron flux for each energy requested
         along with the upper and lower quartiles<br>
         Example keys:<br>
-        - 'E flux 500': [timeX Lshells]
-        - 'E flux 500 upper': [timeX Lshells]
-        - 'E flux 500 lower': [timeX Lshells]
+        - 'E flux': [time,Lshells,energy]
+        - 'upper q': [time,Lshells,energy]
+        - 'lower q': [time,Lshells,energy]
         """
 
         # The post method takes times, Lshells, Bmirros  in io_data,
@@ -211,7 +213,7 @@ class IOList(MethodView):
 
         # return the user reqested pitch angles as well
         output["L"]= invals["L"]
-        output["Bmirror"] = invals["Bmirror"]
+        #output["Bmirror"] = invals["Bmirror"]
 
         # Write Pretty-Print JSON data to file
         #with open("output.json", "w") as write_file:

@@ -7,4 +7,3 @@ mysql.connector
 numpy
 tensorflow
 scikit-learn
-hapiclient

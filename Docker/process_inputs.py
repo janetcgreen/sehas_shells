@@ -5,14 +5,14 @@ from bisect import bisect_right
 
 import requests
 from flask import current_app
+# Get rid of the message about tensorflow optimization
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import keras
 import numpy as np
 from joblib import load
 from flask import current_app
 import datetime as dt
 import requests
-from hapiclient import hapi
-
 
 def qloss(y_true, y_pred):
     qs = [0.25, 0.5, 0.75]
@@ -225,15 +225,14 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     :return:
     '''
 
-    # List of energies we want for the output data
-    #print(" Doing nn")
+    # List of energies for the output data
     if Energies is None:
-        # If no Energies are passed it assumes this
+        # If no Energies are passed assume these
         Energies = np.arange(200.0, 3000.0, 200.0)
 
     # The Bmirror values for the output at each l
     if Bmirrors is None:
-        # This is for the value at the equator
+        # This is for the B value nearest the equator
         Bmirrors = [2.591e+04 * (l ** -2.98) for l in L]
 
     # L values for the ouput corresponding to each bmirror
@@ -242,8 +241,10 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
 
     # Check for -1 where L>7.5
     # Sometimes this happens in the input data because the POES orbit does not
-    # go out very far. In that case, set it to neighboring values
-    # Step through each energy channel
+    # go out very far. In that case, set flux to neighboring values
+
+    # Step through each POES energy channel to
+    # set the flux equal to the neighbor where it is bad
     for wco in range(0, len(evars)):
         bad_inds = np.where((data[evars[wco]][:]) < 0)
         if len(bad_inds[0]) > 0:
@@ -252,20 +253,18 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                 data[evars[wco]][bad_inds[0][bco]][bad_inds[1][bco]] = data[evars[wco]][bad_inds[0][bco]][
                     bad_inds[1][bco] - 1]
 
-    # Todo need to deal with bad data
     # The input data has timeXL for each energy in a dict
     # The expected input for the nn is timeXL e1, timeXL e2 timeXL e3, timeXL e4
-    # So need to concatentate into one  array
-    new_dat = np.array(data[evars[0]][:])
+    # So concatentate the dict into one  array
+    new_dat = np.array(data[evars[0]][:]) # Start with the first energy channel
     for wco in range(1, len(evars)):
         new_dat = np.append(new_dat, data[evars[wco]], axis=1)
 
     l, w = np.shape(new_dat)
 
-    # Output needed if we are going to make a netcdf file
-    # data[E][time x L] at Beq for that L
-    # data[E1_upperq] [timeXL] upper quantile
-    # data[E1_lowerq] [timexL] lower quantile
+    # Output will be data['E flux'][time X L X E]
+    # data['upperq'] [timeXLXE] upper quantile
+    # data['lowerq'] [timexLXE] lower quantile
 
     # Create a dict for the output data
     outdat = {}
@@ -276,7 +275,9 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     # Then create arrays for flux at each Energy and E quantiles
 
     # Need to check if Bmirrors/Ls is 1D or 2d
-    # If its 2D then its an xyz request
+    # If its 2D then its an xyz request and will have different
+    # Bmirror/L values for each time step
+    # If Bmirrors is 1D then it is a fixed set of Bmirrors for every step
 
     if len(np.shape(Bmirrors))>1:
         Bl, Bw = np.shape(Bmirrors) #(2D)
@@ -284,15 +285,22 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
         Bw = len(Bmirrors) #1D
 
     # Define the output columns
-    colstart = 'E flux '
-    for E in Energies:
-        # I changed this so that the output will be timeXBmirrors (or pitch angles)
-        col = colstart + str(int(E))
-        outdat[col] = np.zeros((0, Bw), dtype=float)
-        colh = colstart + str(int(E)) + ' upper q'
-        outdat[colh] = np.zeros((0, Bw), dtype=float)
-        coll = colstart + str(int(E)) + ' lower q'
-        outdat[coll] = np.zeros((0, Bw), dtype=float)
+    colstart = 'E flux'
+    # JGREEN Changed the output so that it has outdat['E flux][time,L,E]
+    # For the new version outdat will be ['E flux'] np.zeros(0,Bw,len(Es))
+    Elen = len(Energies)
+    outdat[colstart] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
+    outdat['upper q'] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
+    outdat['lower q'] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
+
+    #for E in Energies:
+    #    # I changed this so that the output will be timeXBmirrors (or pitch angles)
+    #    col = colstart + str(int(E))
+    #    outdat[col] = np.zeros((0, Bw), dtype=float)
+    #    colh = colstart + str(int(E)) + ' upper q'
+    #    outdat[colh] = np.zeros((0, Bw), dtype=float)
+    #    coll = colstart + str(int(E)) + ' lower q'
+    #    outdat[coll] = np.zeros((0, Bw), dtype=float)
 
     outdat['time'] = list() # same times will be returned except bad data
     outdat['Kp'] = list() # same Kp will be returned
@@ -311,9 +319,9 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
             outdat['Kpmax'].append(Kpmax_data[pco] / 10)
 
             # The NN code can calculate flux for all Ls/Bm at once
-            kp = np.tile(Kpdata[pco], Bw)  # Create a list of Kp for each Bmirror
-            maxkp = np.tile(Kpmax_data[pco], Bw)  # Create a list of maxKp for each Bmirror
-            # Create a list of POES data to be used for each Bmirror calc
+            kp = np.tile(Kpdata[pco], Bw)  # Create an array of Kp for each Bmirror
+            maxkp = np.tile(Kpmax_data[pco], Bw)  # Create anarray of maxKp for each Bmirror
+            # Create an array of POES data to be used for each Bmirror calc
             poes = np.tile(new_dat[pco:pco + 1], (Bw, 1))
 
             # Check if Bmirrors is 2D or 1D
@@ -336,20 +344,32 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
             for eco in range(0, len(Energies)):
                 # Make a list of one energy at all Bm's
                 energy = np.tile(Energies[eco], Bw)
+                # This input is len(Bmirrors/Ls) X (energy, B, L, kp, kpmax,poes)
+                # For just one Bmirror,L it is 1X121 (because poes is 116 long)
+                # for 2 Bmirrors,Ls it is 2X121 etc
                 nn_input = np.concatenate((np.array(energy).reshape(-1, 1), np.array(Bthis).reshape(-1, 1),
                                         np.array(Lthis).reshape(-1, 1), np.array(kp).reshape(-1, 1),
                                         np.array(maxkp).reshape(-1, 1),
                                         poes), axis=1)
                 # This returns the lowerq, log(flux), upperq data for one E and Bmirror(L) at each L
+                # fpre is Bmirrors,Ls X 3 where the 3 cols are upper q, log flux and lower q
                 fpre = out_scale.inverse_transform(hdf5.predict(in_scale.transform(nn_input),verbose=0))
-                cols = [colstart + str(int(Energies[eco])) + ' upper q',
-                        colstart + str(int(Energies[eco])),
-                        colstart + str(int(Energies[eco])) + ' lower q', ]
+                #cols = [colstart + str(int(Energies[eco])) + ' upper q',
+                #        colstart + str(int(Energies[eco])),
+                #        colstart + str(int(Energies[eco])) + ' lower q', ]
+                # Changed to just 3 cols and added energy as another dimension
+                cols = ['upper q',
+                        colstart,
+                        'lower q', ]
                 for cco in range(0, len(cols)):
                     # If there is multiple Bms then each energy channel will be [timeXBm]
-                    temp = outdat[cols[cco]][:] # Get the current data for that energy col
+                    #temp = outdat[cols[cco]][:] # Get the current data for that energy col
+                    outdat[cols[cco]][pco,:,eco] = fpre[:, cco]
                     #Todo set Ls>6.3 to nan
-                    outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
+                    #outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
+    # I think this needs to be a list
+    for cco in range(0, len(cols)):
+        outdat[cols[cco]] = outdat[cols[cco]].tolist()
 
     return outdat
 
@@ -357,7 +377,7 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
 def process_data(time, Ls, Bmirrors, Energies):
     '''
     # PURPOSE: Translates input data into shells electron flux
-    # First it gets the input POES data for the sleected time from
+    # First it gets the input POES data for the selected time from
     # the NASA HAPI server or from an sqlite dbase (testing)
     #
     :param time (list):
@@ -369,7 +389,7 @@ def process_data(time, Ls, Bmirrors, Energies):
 
     # Create a dict for the output data
     outdat = {}
-
+    # print('Getting data')
     try:
 
         # --------------------- Set up nn ------------------------
@@ -386,6 +406,7 @@ def process_data(time, Ls, Bmirrors, Energies):
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
 
         # Check if testing or no
+        # print(current_app.testing)
         if current_app.testing==True:
             if current_app.config['HAPI_TEST']==False:
                 # In testing mode read the poes data from an sqlite dbase
@@ -393,7 +414,7 @@ def process_data(time, Ls, Bmirrors, Energies):
                 # This reorganizes the data from the dbase into a dict
                 # These are all numpy arrays
                 map_data = reorg_data(keys,rows,channels)
-                print('Here')
+
             else:
                 server = os.environ.get('HAPI_SERVER')
                 dataset = os.environ.get('HAPI_DATASET')
@@ -431,7 +452,7 @@ def process_data(time, Ls, Bmirrors, Energies):
                         out_scale, in_scale, hdf5, L=Ls, Bmirrors=Bmirrors,
                         Energies=Energies)
 
-        print('Done with nn')
+        # print('Done with nn')
 
     except Exception as e:
         # If there are any exceptions then log the error
