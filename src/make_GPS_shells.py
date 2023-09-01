@@ -220,7 +220,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
         # that are not available at celestrak. It will be up to CCMC to see
         # if they want to get a spacetrak account to make this work
         # Otherwise past data would be reprocessed with TLEs that are not
-        # that are close to the requested dates
+        # that close to the requested dates
         sdate = sdate_all
 
     # Create the time array between sdate and edate at timestep tstep
@@ -328,7 +328,23 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
         else:
             ndata1 = response.json()
         # flatten the data returned
+        # The old data output had keys for each energy. The new data has
+        # one key E flux with [t,L/Bmirror,energy]
+        # To make this work now have to sort out E flux into new keys
+        # This is a messy way to deal with that
+        for eco,E in enumerate(ndata1['Energies']):
+            col = 'E flux '+str(int(E))
+            ndata1[col] = list(np.array(ndata1['E flux'][:])[:,0,eco])
+            colu = col+' upper q'
+            ndata1[colu] = list(np.array(ndata1['upper q'][:])[:, 0, eco])
+            colu = col+' lower q'
+            ndata1[colu] = list(np.array(ndata1['lower q'][:])[:, 0, eco])
+        ndata1.pop('E flux')
+        ndata1.pop('upper q')
+        ndata1.pop('lower q')
+
         ndata = {key: list(np.array(ndata1.get(key, [])).flat)  for key in ndata1.keys()}
+
         if odata is not None:
             shdata = {key: odata.get(key, []) + list(ndata.get(key, [])) for key in odata.keys()}
         else:
@@ -345,7 +361,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
     for key in shdata.keys():
         if key not in ['time','L']:
             for x in inds:
-                shdata[key][x]=np.nan
+                shdata[key][x]=-1
 
 
     # If theres data then write it to a file

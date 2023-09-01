@@ -1624,7 +1624,7 @@ def write_shells_text(outdir, outdat, fname, otype):
 
         # Writing file
         tfile = dt.datetime.strptime(newdat['time'][-1],dformat)
-        foutnow = os.path.join(outdir,fname+'_'+tfile.strftime('%Y%m%dT%H%M%S')+'.'+otype)
+        foutnow = os.path.join(outdir,fname+'_'+tfile.strftime('%Y%m%d')+'.'+otype)
 
         try:
             if otype == 'json':

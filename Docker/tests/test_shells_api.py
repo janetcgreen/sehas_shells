@@ -62,6 +62,10 @@ def test_request_example2(client):
     xyz = list()
     for tco in range(0,len(times2)):
         xyz.append([4,1,0])
+
+    # In this example we are asking for the flux at 1 energy
+    # and one pitch angle to be used for all locations
+    # i.e. one L,Bm for each location/time
     energies = [200]
 
     # Just give one pitch angle value
@@ -92,9 +96,9 @@ def test_request_example2(client):
     for E in energies:
         col = 'E flux '+str(E)
         test_one = test_data[col][:,Lind] # This is the test data at the requested energy and L
-        app_one = temp['E flux 200'][:] #This is the same for the app
-
-        assert np.sum(np.abs(test_one-app_one))<.001
+        #app_one = temp['E flux 200'][:] #This is the same for the app
+        app_one = np.array(temp['E flux'][:])  # This is the same for the app
+        assert np.sum(np.abs(test_one-app_one[:,:,0]))<.001
 
 def test_request_with_multiple_Bmirrors(client):
     # TEST: Test that if multiple pitch angles
@@ -159,9 +163,9 @@ def test_request_with_multiple_Bmirrors(client):
         col = 'E flux '+str(energies[0])
         # Have to get the two datasets in the right format
         test_one = np.ndarray.flatten(test_data[col][:,Lind])
-        app_temp = np.array(temp['E flux 200'][:])
+        app_temp = np.array(temp['E flux'][:])
         #print(np.shape(app_temp[:,pco]))
-        app_one = app_temp[:,pco]
+        app_one = app_temp[:,pco,0]
 
         assert np.sum(np.abs(test_one-app_one))<.001
 
@@ -199,32 +203,41 @@ def test_request_with_LShells(client):
     response = app.test_client().post("/shells_io_L", data=data, content_type='application/json')
     temp = response.json
     #print(temp)
-    print(np.shape(temp['E flux 200'][:]))
+    # print(np.shape(temp['E flux'][:]))
 
     for pco in range(0,len(energies)):
         col = 'E flux '+str(energies[pco])
         # Have to get the two datasets in the right format
         test_one = test_data[col][:]
-        app_one = np.array(temp[col][:])
+        app_one = np.array(temp['E flux'][:])
 
-        assert np.sum(np.abs(test_one-app_one))<.001
+        assert np.sum(np.abs(test_one-app_one[:,:,pco]))<.001
 
 def test_A_HAPI_request(client):
     # TEST: Test that the HAPI request returns the right poes data
-    #
-
-    sdate = dt.datetime(2023,8,17,0,0,0)
+    sdate = dt.datetime(2022,1,1,0,0,0)
     times = [sdate+dt.timedelta(minutes=x*5) for x in range(0,256)]
     times2 = [x.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for x in times]
     load_dotenv(".env", verbose=True)
     server = os.environ.get('HAPI_SERVER')
     dataset = os.environ.get('HAPI_DATASET')
     hdata = pi.read_hapi_inputs(times2,server,dataset)
+    hmap_data = pi.reorg_hapi(times2, hdata)
 
     # Check that data is returned
     dl,dw = np.shape(hdata['mep_ele_tel90_flux_e1'][:])
+    keys, rows = pi.read_db_inputs(times2)
+    # This reorganizes the data from the dbase into a dict
+    # These are all numpy arrays
+    channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
+    tmap_data = pi.reorg_data(keys, rows, channels)
+
+    tdif = np.sum(np.abs(np.array(tmap_data['mep_ele_tel90_flux_e1']) - np.array(hmap_data['mep_ele_tel90_flux_e1'])))
+    # The HAPI data just has NOAA 15 and the sql dbase has all sats so they
+    # are a little different
     if (dl>0) & (dw==29):
-        test=1
+        if tdif<2000:
+            test=1
 
     assert test==1
 
@@ -276,8 +289,10 @@ def test_with_hapi_data(client):
     # for magephem so it returns a fixed L and Bmirror for 1 energy and Bmirror
     # Returns e flux that is len (256)
     # This just checks that the right len data is returned
-    if len(temp['E flux 200'])==256:
+    if len(temp['E flux'])==256:
         lcheck=1
+    else:
+        lcheck=0
 
     assert lcheck == 1
 

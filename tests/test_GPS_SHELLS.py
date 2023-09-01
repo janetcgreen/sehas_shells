@@ -78,12 +78,12 @@ class test_GPS_shells(unittest.TestCase):
 
     def test_B_check_new_output(self):
         #===============================================================
-        # TEST 3: Check that a file with the last 7 days is created when none exists
+        # TEST 3: Check that a file with the last 2 days is created when none exists
         #==============================================================
 
         # First delete any existing test output
         sat = "PRN 32"
-        odir = os.getcwd()
+        odir = os.getcwd() # Use the current working directory for the output
         ndays = 2
         tstep=5
         oname = 'GPS_SHELLS_test_'
@@ -94,9 +94,11 @@ class test_GPS_shells(unittest.TestCase):
         if len(ofile)>0:
             os.remove(ofile[0])
 
+        # This url doesn't get used because in testing mode it uses the serverless flask
+        # but it is needed as an input
         sh_url = 'http://sehas:5005/shells_io/'
 
-        # This should create the file s.path.join(odir,fname)
+        # This should create the file os.path.join(odir,fname)
         mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
                         Es=[500, 2000], outdir=os.getcwd(),outname =oname, testing=1)
 
