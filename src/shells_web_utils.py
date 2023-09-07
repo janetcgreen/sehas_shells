@@ -163,7 +163,7 @@ class poes_sat_sem2:
         'n15':'noaa15','n16':'noaa16','n17':'noaa17','n18':'noaa18',
             'n19':'noaa19','m01':'metop01','m02':'metop02','m03':'metop03'
         }
-        return longames[self.shortname]
+        return longnames[self.shortname]
     def satid(self):
         satids ={'n15':1,'n16':2,'n17':3,'n18':4,
             'n19':5,'m01':6,'m02':7,'m03':8}

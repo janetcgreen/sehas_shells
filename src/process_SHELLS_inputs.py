@@ -8,6 +8,7 @@ import os
 import fnmatch
 import requests
 from joblib import load
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import keras
 import netCDF4 as nc4
 from io import BytesIO
@@ -433,7 +434,7 @@ def get_start_rt_text(cdict,sat,outdir):
             while ((fco<fend) & (ltime is None)):
                 lastdata = pd.read_csv(flist[fco]).to_dict(orient='list')
                 satIDs = np.array(lastdata['satID'])
-                inds = np.where(satIDs==satinfo.satid())[0]
+                inds = np.where(satIDs==sat)[0]
                 if len(inds)>0:
                     ltime = dt.datetime.strptime(lastdata['time'][inds[-1]],dformat)
                 fco = fco +1
