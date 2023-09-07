@@ -100,6 +100,8 @@ def test_request_example2(client):
         app_one = np.array(temp['E flux'][:])  # This is the same for the app
         assert np.sum(np.abs(test_one-app_one[:,:,0]))<.001
 
+    test_data.close()
+
 def test_request_with_multiple_Bmirrors(client):
     # TEST: Test that if multiple pitch angles
     # or Bmirrors are requested then it still works.
@@ -168,6 +170,148 @@ def test_request_with_multiple_Bmirrors(client):
         app_one = app_temp[:,pco,0]
 
         assert np.sum(np.abs(test_one-app_one))<.001
+    test_data.close()
+
+def test_request_with_omni(client):
+    # TEST: Test that if [-1] is passed for the pitch angle than
+    # omni flux is retrieved
+    # The test bit will emulate the correct magepehem response
+    # based on the number of pitch angles passed
+
+    print('Testing that app output matches previous shells output with omni')
+
+    # First read in the netcdf file that the test will compare to
+    fname = 'shells_neural20220101.nc'
+    test_data = nc4.Dataset(fname, 'r')
+
+    # Then create a list of times from the file
+
+    times1 = [dt.datetime.utcfromtimestamp(x / 1000) for x in test_data['time']]
+    times2 = [x.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for x in times1]
+
+    # The x,y,z and pitch angels won't matter for this test because
+    # when in test mode, it forces the L value to be whatever is in the
+    # test_config.py TESTL variable. xyz just needs to be the right len
+
+    xyz = list()
+    for tco in range(0,len(times2)):
+        xyz.append([4,1,0])
+    energies = [200,400]
+
+    # Here we pass [-1] to signify omni
+    pas = [-1]
+    ddict = {"time":times2,
+             "energies":energies,
+             "xyz":xyz,
+             "sys":"GEO",
+             "pitch_angles":pas
+            }
+    data = json.dumps(ddict)
+
+    app = create_app(test_config="test_config")
+
+    #data = ddict
+    response = app.test_client().post("/shells_io",data=data,content_type='application/json')
+
+    # Chekc that response is the right shape
+    t,Es= np.shape(response.json['E flux'][:])
+    test_data.close()
+
+    assert ((t==len(times2)) & (Es==len(energies)))
+
+def test_request_with_integral(client):
+    # TEST: Test that if [-1] is passed for the pitch angle than
+    # omni flux is retrieved
+    # The test bit will emulate the correct magepehem response
+    # based on the number of pitch angles passed
+
+    print('Testing that app output matches previous shells output with omni')
+
+    # First read in the netcdf file that the test will compare to
+    fname = 'shells_neural20220101.nc'
+    test_data = nc4.Dataset(fname, 'r')
+
+    # Then create a list of times from the file
+
+    times1 = [dt.datetime.utcfromtimestamp(x / 1000) for x in test_data['time']]
+    times2 = [x.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for x in times1]
+
+    # The x,y,z and pitch angels won't matter for this test because
+    # when in test mode, it forces the L value to be whatever is in the
+    # test_config.py TESTL variable. xyz just needs to be the right len
+
+    xyz = list()
+    for tco in range(0,len(times2)):
+        xyz.append([4,1,0])
+    energies = [-200]
+
+    # Here we pass [-1] to signify omni
+    pas = [20,30]
+    ddict = {"time":times2,
+             "energies":energies,
+             "xyz":xyz,
+             "sys":"GEO",
+             "pitch_angles":pas
+            }
+    data = json.dumps(ddict)
+
+    app = create_app(test_config="test_config")
+
+    #data = ddict
+    response = app.test_client().post("/shells_io",data=data,content_type='application/json')
+
+    # Chekc that response is the right shape
+    t,Es= np.shape(response.json['E flux'][:])
+    test_data.close()
+
+    assert ((t==len(times2)) & (Es==len(pas)))
+
+def test_request_with_integral_omni(client):
+    # TEST: Test that if [-1] is passed for the pitch angle than
+    # omni flux is retrieved
+    # The test bit will emulate the correct magepehem response
+    # based on the number of pitch angles passed
+
+    print('Testing that integral and omni works')
+
+    # First read in the netcdf file that the test will compare to
+    fname = 'shells_neural20220101.nc'
+    test_data = nc4.Dataset(fname, 'r')
+
+    # Then create a list of times from the file
+
+    times1 = [dt.datetime.utcfromtimestamp(x / 1000) for x in test_data['time']]
+    times2 = [x.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for x in times1]
+
+    # The x,y,z and pitch angels won't matter for this test because
+    # when in test mode, it forces the L value to be whatever is in the
+    # test_config.py TESTL variable. xyz just needs to be the right len
+
+    xyz = list()
+    for tco in range(0,len(times2)):
+        xyz.append([4,1,0])
+    energies = [-200]
+
+    # Here we pass [-1] to signify omni
+    pas = [-1]
+    ddict = {"time":times2,
+             "energies":energies,
+             "xyz":xyz,
+             "sys":"GEO",
+             "pitch_angles":pas
+            }
+    data = json.dumps(ddict)
+
+    app = create_app(test_config="test_config")
+
+    #data = ddict
+    response = app.test_client().post("/shells_io",data=data,content_type='application/json')
+
+    # Chekc that response is the right shape
+    t= np.shape(response.json['E flux'][:])
+    test_data.close()
+
+    assert (t[0]==len(times2))
 
 def test_request_with_LShells(client):
     # TEST: Check that the right data is returned when the endpoint
@@ -212,6 +356,7 @@ def test_request_with_LShells(client):
         app_one = np.array(temp['E flux'][:])
 
         assert np.sum(np.abs(test_one-app_one[:,:,pco]))<.001
+    test_data.close()
 
 def test_A_HAPI_request(client):
     # TEST: Test that the HAPI request returns the right poes data

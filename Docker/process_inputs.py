@@ -288,6 +288,7 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     colstart = 'E flux'
     # JGREEN Changed the output so that it has outdat['E flux][time,L,E]
     # For the new version outdat will be ['E flux'] np.zeros(0,Bw,len(Es))
+    # Any bad data will be left as -1
     Elen = len(Energies)
     outdat[colstart] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
     outdat['upper q'] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
@@ -311,12 +312,12 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
         # The input needs Kp, Kpmax, E, Bmirror for each L
         # Check that the input data does not have Nans
         check_dat = np.where((np.isnan(new_dat[pco][:])) | (new_dat[pco][:] < 0))[0]
+        # Append the current value to the outdat list
+        outdat['time'].append(data['time'][pco])
+        outdat['Kp'].append(Kpdata[pco] / 10)
+        outdat['Kpmax'].append(Kpmax_data[pco] / 10)
 
         if len(check_dat) < 1:
-            # Append the current value to the outdat list
-            outdat['time'].append(data['time'][pco])
-            outdat['Kp'].append(Kpdata[pco] / 10)
-            outdat['Kpmax'].append(Kpmax_data[pco] / 10)
 
             # The NN code can calculate flux for all Ls/Bm at once
             kp = np.tile(Kpdata[pco], Bw)  # Create an array of Kp for each Bmirror
@@ -357,6 +358,13 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                 #cols = [colstart + str(int(Energies[eco])) + ' upper q',
                 #        colstart + str(int(Energies[eco])),
                 #        colstart + str(int(Energies[eco])) + ' lower q', ]
+
+                # Set fpre where Bm is negative or L is negative to -1
+                # Todo make sure this works for a list of Bms and Ls
+                badmaginds = np.where(np.array(Bthis)<0)[0]
+                fpre[badmaginds,:]=0
+                bigLinds = np.where((np.array(Lthis)>6.3) |(np.array(Lthis)<3.0) )[0]
+                fpre[bigLinds, :] = -1
                 # Changed to just 3 cols and added energy as another dimension
                 cols = ['upper q',
                         colstart,
@@ -365,7 +373,6 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                     # If there is multiple Bms then each energy channel will be [timeXBm]
                     #temp = outdat[cols[cco]][:] # Get the current data for that energy col
                     outdat[cols[cco]][pco,:,eco] = fpre[:, cco]
-                    #Todo set Ls>6.3 to nan
                     #outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
     # I think this needs to be a list
     for cco in range(0, len(cols)):
@@ -378,8 +385,8 @@ def process_data(time, Ls, Bmirrors, Energies):
     '''
     # PURPOSE: Translates input data into shells electron flux
     # First it gets the input POES data for the selected time from
-    # the NASA HAPI server or from an sqlite dbase (testing)
-    #
+    # the NASA HAPI server or from an sqlite dbase (testing) and
+    # then it applies the neural network mapping function
     :param time (list):
     :param Ls (list 1D or 2D):
     :param Bmirrors (list 1D or 2D):
@@ -402,31 +409,30 @@ def process_data(time, Ls, Bmirrors, Energies):
         in_scale = load(os.environ.get('IN_SCALE_FILE'))
         hdf5 = keras.models.load_model(os.environ.get('HDF5FILE'), custom_objects={'loss': qloss}, compile=False)
 
-        # These are the POES electron flux channel names
+        # POES electron flux channel names
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
 
-        # Check if testing or no
-        # print(current_app.testing)
+        # Check if testing or not
         if current_app.testing==True:
+            # Test with and without calling inputs from HAPI
             if current_app.config['HAPI_TEST']==False:
-                # In testing mode read the poes data from an sqlite dbase
+                # In this testing mode, read the poes data from an sqlite dbase
                 keys, rows = read_db_inputs(time)
-                # This reorganizes the data from the dbase into a dict
+                # Reorganize data from the dbase into a dict
                 # These are all numpy arrays
                 map_data = reorg_data(keys,rows,channels)
 
             else:
+                # In this testing mode, read the poes data from CCMC HAPI
                 server = os.environ.get('HAPI_SERVER')
                 dataset = os.environ.get('HAPI_DATASET')
                 hapi_data = read_hapi_inputs(time, server, dataset)
 
                 # get the closest hapi data to the times in time
                 map_data = reorg_hapi(time,hapi_data)
-                #nearest_pos = [get_nearest(input_times, t) for t in req_times]
-                #map_data = reorg_data(keys, rows, channels)
 
         else:
-            # In testing mode read the data from an sqlite dbase
+            # Get data from the ccmc hapi database
             # https://iswa.ccmc.gsfc.nasa.gov/IswaSystemWebApp/hapi/data?id=shell_input&time.min=2023-08-17T00:00:00.0Z&time.max=2023-08-18T00:00:00.0Z&format=json
 
             server = os.environ.get('HAPI_SERVER')
@@ -438,12 +444,13 @@ def process_data(time, Ls, Bmirrors, Energies):
 
         # Replace map_data['time'] with the requested times
         map_data['time'] = time
+
         #print('Doing nn')
-        # Before we were calling the nn with a fixed set of Ls, and Bmirrors
-        # for every time stamp that were passed with L=Ls and Bmirrors = Bmirros.
+        # The previous version of shells called the nn with a fixed set of Ls, and Bmirrors
+        # for every time stamp that were passed with L=Ls and Bmirrors = Bmirrors.
         # Now we call it with a different L for every time step
         # And different Bmirrors (timeX pitch angles)
-        # We might still want the ability to pass a fixed set of Ls and Bmirrors
+        # We still want the ability to pass a fixed set of Ls and Bmirrors
         # To do that we check if Ls is 1D or 2D in run_nn
         # The way the call to magephem works, this will always return a 2D array
         # for Ls and Bmirrors

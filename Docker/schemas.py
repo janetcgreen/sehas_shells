@@ -22,10 +22,12 @@ class InSchema(BaseSchema):
                      description="coordinate system for xyz locations: GDZ,GEO,GSM,GSE,SM,GEI,MAG,SPH",
                      example = 'GEO')
     energies = fields.List(fields.Float(), required=True,
-                           description="1-D list of energies (keV) for the returned electron flux",
+                           description="1-D list of energies (keV) for the returned electron flux"
+                                       "or a negative energy for integral flux above that value",
                            example=[500,600,700,1000])  # list of energies (floats)
     pitch_angles = fields.List(fields.Float(), required=True,
-                               description="1-D list of local pitch angles (degrees) for the returned electron flux",
+                               description="1-D list of local pitch angles (degrees) for the returned electron flux"
+                                           "or a [-1] for omnidirecional flux",
                                example = [50,60,70])  # list of pitch angles (floats)
     # outputs
     # L = fields.Str(required=False)  # based on x,y,z
