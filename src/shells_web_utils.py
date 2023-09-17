@@ -286,7 +286,16 @@ def make_Lbin_data(data, Lbins=np.arange(1,8.5,.25), Lcol = 'L_IGRF', vars = Non
     # JGREEN: 09/2021 Changed this so that pbins include 1 more than the last pass
     # because bindata needs the edge bins. i.e. if the last pass is 56 then
     # pbins should be 0 to 57.
-    pbins = np.arange(0, (passes[-1] + 2))
+    # pbins = np.arange(0, (passes[-1] + 2))
+    # JGREEN 09/2023 Here we are again. I think this should leave off the last
+    # pass which is almost certain to be incomplete. It should be picked up by
+    # the next run. However, scipy.binned_statistic_2d includes data from the last
+    # bin edge so even if you change the range it still adds the data from the
+    # last two passes and makes the time wrong. That seems like a bug to me
+    # It might work to make the last pass a -1 then it should not include it
+    pbins = np.arange(0, (passes[-1] + 1))
+    # This gets rid of the last partial pass so its not included
+    passes[np.where(passes == passes[-1])] = -1
 
     bindat,bvars = pu.bindata(data, passes, data['L_IGRF'][:], pbins, Lbins)
     
@@ -340,6 +349,8 @@ def make_Lbin_data(data, Lbins=np.arange(1,8.5,.25), Lcol = 'L_IGRF', vars = Non
     # It could be all nans if the last pass is only partial and all greater than L=8
     # Or there could be some weird times because the L passes get screwed up
     tinds = np.where(~np.isnan(time_med))[0]
+    # Todo add a check to make sure the last pass is not partial
+    # because when you add more data the new time_med will be different
 
     # Make the return dict with the good tinds
     for vind in range(0,len(bvars)):
