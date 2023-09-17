@@ -27,7 +27,7 @@ def integ_exp(temp_flux,Es):
     for co in range(0,c-1):
         E0[:, co] = (Es[co] - Es[co + 1]) / (temp_flux[:, co + 1] - temp_flux[:, co])
         # Check for Nans and set them to 0
-        J0[:, co] = 10**temp_flux[:, co] * np.exp(Es[co] / E0[:, co])
+        J0[:, co] = temp_flux[:, co] * np.exp(Es[co] / E0[:, co])
         Jtemp = J0[:, co] * E0[:, co] * np.exp(-1.0 * Es[co] / E0[:, co]) \
                 - J0[:, co] * E0[:, co] * np.exp(-1.0 * Es[co + 1] / E0[:, co])
         jinds = np.where(np.isnan(Jtemp))
@@ -36,7 +36,7 @@ def integ_exp(temp_flux,Es):
         Jtemp[jinds[0]] = 0
         Jint[:, co] = Jtemp
         integral[:] += Jint[:, co]
-    return np.log10(integral)
+    return integral
 
 @blp.route("/shells_io")
 class IOList(MethodView):
@@ -218,21 +218,24 @@ class IOList(MethodView):
         # For the omni case the pitch_angles returned are the ones used for integration
         # For the integral case, the energies returned are the ones used for integration
         output['pitch_angles']= io_data["pitch_angles"]
-
+        eflux_fill=-1.0e31
         if omni ==True:
             # Integrate the flux and quartiles over pitch angles
             for col in ['E flux','upper q','lower q']:
-                oflux = np.full((len(output['time']), len(output['Energies'])), dtype=float, fill_value=-1)
+                oflux = np.full((len(output['time']), len(output['Energies'])), dtype=float, fill_value=eflux_fill)
                 temp_flux = np.array(output[col][:])
                 for eco,E in enumerate(output['Energies']):
                     # Do the pitch angle integration for each energy
-                    # If a pitch angle is in the loss cone, magephem returns
-                    # -e31. The flux for those points is also set to 0
-
-                    oflux[:,eco] = np.log10(pstep*4*np.pi*np.sum((10**temp_flux[:,:,eco]),axis=1))
-
+                    # If a pitch angle is in the loss cone, magephem returns -e31.
+                    # The flux for those points is set to 0 after the neural network runs
+                    # If it is out of bounds then it is -e31
+                    oflux[:,eco] = (pstep*4*np.pi*np.sum((temp_flux[:,:,eco]),axis=1))
+                    # If any are negative then flag the omni
+                    badinds = np.any(temp_flux[:,:, eco]<0,axis=1)
+                    oflux[badinds,eco]=eflux_fill
                 output[col] = oflux.tolist()
 
+        # Check if we also need an integral flux
         if (integral ==True):
             # Assume an exponential spectrum for the flux
             for col in ['E flux', 'upper q', 'lower q']:
@@ -241,11 +244,15 @@ class IOList(MethodView):
                 if len(np.shape(output[col][:]))==2:
                     #oflux = np.full((len(output['time'])), dtype=float, fill_value=-1)
                     oflux = integ_exp(temp_flux, output['Energies'])
+                    badinds = np.any(temp_flux[:,eco]<0,axis=1)
+                    oflux[badinds]=eflux_fill
                 else:
-                    oflux = np.full((len(output['time']), len(output['pitch_angles'])), dtype=float, fill_value=-1)
+                    # Otherwise it is [time,pa,E]
+                    oflux = np.full((len(output['time']), len(output['pitch_angles'])), dtype=float, fill_value=eflux_fill)
                     for pco,p in enumerate(output['pitch_angles']):
-                        # If its omni then temp_flux will be [time,E]
                         oflux[:,pco] = integ_exp(temp_flux[:,pco,:],output['Energies'])
+                        badinds = np.any(temp_flux[:,pco, :] < 0, axis=1)
+                        oflux[badinds,pco] = eflux_fill
 
                 output[col] = oflux.tolist()
 
@@ -310,18 +317,6 @@ class IOList(MethodView):
         invals["Bmirror"] = [io_data["Bmirror"]] * len(io_data["time"])
 
         output = pi.process_data(io_data["time"], invals["L"], invals["Bmirror"], io_data["energies"])
-
-        # The output will be a json dict
-        # Todo figure out what exactly should be output other than flux
-        # output has time, L, E flux 200, etc
-
-        # return the user reqestedL as well
-        # output["L"]= invals["L"]
-        # output["Bmirror"] = invals["Bmirror"]
-
-        # Write Pretty-Print JSON data to file
-        #with open("output.json", "w") as write_file:
-        #    json.dump(output2, write_file, indent=4)
 
         # To make this work and return the output dict as a json
         # object there is no defined schema for the response
