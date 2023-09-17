@@ -244,7 +244,7 @@ class IOList(MethodView):
                 if len(np.shape(output[col][:]))==2:
                     #oflux = np.full((len(output['time'])), dtype=float, fill_value=-1)
                     oflux = integ_exp(temp_flux, output['Energies'])
-                    badinds = np.any(temp_flux[:,eco]<0,axis=1)
+                    badinds = np.any(temp_flux[:,:]<0,axis=1)
                     oflux[badinds]=eflux_fill
                 else:
                     # Otherwise it is [time,pa,E]
