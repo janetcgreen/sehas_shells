@@ -363,18 +363,19 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
 
                 # JGREEN 09/2023 Changed output to flux instead of log(flux)
                 # for the decision tool
-                fpre=np.exp(fprelog)
+                # Todo check why fpre is float32
+                fpre=np.exp(np.float64(fprelog))
                 # Set fpre where Bm is negative or L is negative to 0
-                # The magephem code outputs negiative in the loss cone
-                badmaginds = np.where(np.array(Bthis)<0)[0]
+                # The magephem code outputs negiative Bm in the loss cone
+                badmaginds = np.where((np.array(Bthis)<0) | (np.array(Lthis)<0))[0]
                 fpre[badmaginds,:]=0
                 # Set out of bounds to a flag
-                bigLinds = np.where((np.array(Lthis)>6.3) |(np.array(Lthis)<3.0) )[0]
+                bigLinds = np.where((np.array(Lthis)>6.3) |((np.array(Lthis)<3.0) & (np.array(Lthis)>0.0)) )[0]
                 fpre[bigLinds, :] = eflux_flag
                 # Changed to just 3 cols and added energy as another dimension
-                cols = ['upper q',
+                cols = ['lower q',
                         colstart,
-                        'lower q', ]
+                        'upper q', ]
                 for cco in range(0, len(cols)):
                     # If there is multiple Bms then each energy channel will be [timeXBm]
                     #temp = outdat[cols[cco]][:] # Get the current data for that energy col
@@ -444,9 +445,6 @@ def process_data(time, Ls, Bmirrors, Energies):
             server = os.environ.get('HAPI_SERVER')
             dataset = os.environ.get('HAPI_DATASET')
             hapi_data = read_hapi_inputs(time, server, dataset)
-
-            if hapi_data is None:
-                return 204
 
             # get the closest hapi data to the times in time
             map_data = reorg_hapi(time, hapi_data)

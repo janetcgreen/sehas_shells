@@ -25,7 +25,7 @@ def integ_exp(temp_flux,Es):
     Jint = np.zeros((r, c), dtype=float)
     integral = np.zeros((r), dtype=float)
     for co in range(0,c-1):
-        E0[:, co] = (Es[co] - Es[co + 1]) / (temp_flux[:, co + 1] - temp_flux[:, co])
+        E0[:, co] = (Es[co] - Es[co + 1]) / (np.log(temp_flux[:, co + 1]/np.log(temp_flux[:, co])))
         # Check for Nans and set them to 0
         J0[:, co] = temp_flux[:, co] * np.exp(Es[co] / E0[:, co])
         Jtemp = J0[:, co] * E0[:, co] * np.exp(-1.0 * Es[co] / E0[:, co]) \
