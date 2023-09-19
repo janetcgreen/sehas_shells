@@ -97,7 +97,8 @@ def test_request_example2(client):
         col = 'E flux '+str(E)
         test_one = test_data[col][:,Lind] # This is the test data at the requested energy and L
         #app_one = temp['E flux 200'][:] #This is the same for the app
-        app_one = np.array(temp['E flux'][:])  # This is the same for the app
+        # JGREEN 09/2023 The app puts out flux and not log flux so had to change this
+        app_one = np.log(np.array(temp['E flux'][:]) ) # This is the same for the app
         assert np.sum(np.abs(test_one-app_one[:,:,0]))<.001
 
     test_data.close()
@@ -165,7 +166,7 @@ def test_request_with_multiple_Bmirrors(client):
         col = 'E flux '+str(energies[0])
         # Have to get the two datasets in the right format
         test_one = np.ndarray.flatten(test_data[col][:,Lind])
-        app_temp = np.array(temp['E flux'][:])
+        app_temp = np.log(np.array(temp['E flux'][:]))
         #print(np.shape(app_temp[:,pco]))
         app_one = app_temp[:,pco,0]
 
@@ -219,9 +220,107 @@ def test_request_with_omni(client):
 
     assert ((t==len(times2)) & (Es==len(energies)))
 
-def test_request_with_integral(client):
+def test_omni_out_of_bounds(client):
     # TEST: Test that if [-1] is passed for the pitch angle than
-    # omni flux is retrieved
+    # and its out of bounds then it give -e31
+    # The test bit will emulate the correct magepehem response
+    # based on the number of pitch angles passed
+
+    print('Testing omni out of bounds')
+
+    # First read in the netcdf file that the test will compare to
+    fname = 'shells_neural20220101.nc'
+    test_data = nc4.Dataset(fname, 'r')
+
+    # Then create a list of times from the file
+
+    times1 = [dt.datetime.utcfromtimestamp(x / 1000) for x in test_data['time']]
+    times2 = [x.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for x in times1]
+
+    # The x,y,z and pitch angels won't matter for this test because
+    # when in test mode, it forces the L value to be whatever is in the
+    # test_config.py TESTL variable. xyz just needs to be the right len
+
+    xyz = list()
+    for tco in range(0,len(times2)):
+        xyz.append([4,1,0])
+    energies = [200,400]
+
+    # Here we pass [-1] to signify omni
+    pas = [-1]
+    ddict = {"time":times2,
+             "energies":energies,
+             "xyz":xyz,
+             "sys":"GEO",
+             "pitch_angles":pas
+            }
+    data = json.dumps(ddict)
+
+    app = create_app(test_config="test_bounds_config")
+
+    #data = ddict
+    response = app.test_client().post("/shells_io",data=data,content_type='application/json')
+
+    # These should all be out of bounds and -1.0e31
+    t,Es= np.shape(response.json['E flux'][:])
+    # Here l should be t*Es
+    l,w = np.where(np.array(response.json['E flux'][:])==-1.0e31)
+    test_data.close()
+
+    assert ((t==len(times2)) & (Es==len(energies)) &(len(l)==t*Es))
+
+def test_int_out_of_bounds(client):
+    # TEST: Test that if [-energy] is passed for the pitch angle than
+    # and its out of bounds then it give -1e31
+    # The test bit will emulate the correct magepehem response
+    # based on the number of pitch angles passed
+
+    print('Testing omni out of bounds')
+
+    # First read in the netcdf file that the test will compare to
+    fname = 'shells_neural20220101.nc'
+    test_data = nc4.Dataset(fname, 'r')
+
+    # Then create a list of times from the file
+
+    times1 = [dt.datetime.utcfromtimestamp(x / 1000) for x in test_data['time']]
+    times2 = [x.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for x in times1]
+
+    # The x,y,z and pitch angels won't matter for this test because
+    # when in test mode, it forces the L value to be whatever is in the
+    # test_config.py TESTL variable. xyz just needs to be the right len
+
+    xyz = list()
+    for tco in range(0,len(times2)):
+        xyz.append([4,1,0])
+    energies = [-300]
+
+    # Here we pass [-1] to signify omni
+    pas = [30,40]
+    ddict = {"time":times2,
+             "energies":energies,
+             "xyz":xyz,
+             "sys":"GEO",
+             "pitch_angles":pas
+            }
+    data = json.dumps(ddict)
+
+    app = create_app(test_config="test_bounds_config")
+
+    #data = ddict
+    response = app.test_client().post("/shells_io",data=data,content_type='application/json')
+
+    # These should all be out of bounds and -1.0e31
+    t,ps= np.shape(response.json['E flux'][:])
+    # Here l should be t*Es
+    l,w = np.where(np.array(response.json['E flux'][:])==-1.0e31)
+    test_data.close()
+
+    assert ((t==len(times2)) & (ps==len(pas)) &(len(l)==t*ps))
+
+def test_request_with_integral(client):
+    # TEST: Test that if -Energy is passed
+    # then integral energy flux is returned
     # The test bit will emulate the correct magepehem response
     # based on the number of pitch angles passed
 
@@ -267,8 +366,8 @@ def test_request_with_integral(client):
     assert ((t==len(times2)) & (Es==len(pas)))
 
 def test_request_with_integral_omni(client):
-    # TEST: Test that if [-1] is passed for the pitch angle than
-    # omni flux is retrieved
+    # TEST: Test that if [-1] is passed for the pitch angle
+    # And a negative energy then integral omni is retrieved
     # The test bit will emulate the correct magepehem response
     # based on the number of pitch angles passed
 
@@ -353,7 +452,7 @@ def test_request_with_LShells(client):
         col = 'E flux '+str(energies[pco])
         # Have to get the two datasets in the right format
         test_one = test_data[col][:]
-        app_one = np.array(temp['E flux'][:])
+        app_one = np.log(np.array(temp['E flux'][:]))
 
         assert np.sum(np.abs(test_one-app_one[:,:,pco]))<.001
     test_data.close()

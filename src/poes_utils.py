@@ -2095,7 +2095,9 @@ def getLpass(L,dist=200,prom=.5):
         Ldata = L.data
     else:
         Ldata = L
-    goodinds= np.where((Ldata[:]>0) & (Ldata[:]<30))[0]
+    #JGREEN 9/2023 Changed the threshold to 80 instead of 30
+    # because it defines the passes better
+    goodinds= np.where((Ldata[:]>0) & (Ldata[:]<80))[0]
     # This method works best for POES because at low L the values repeat so differencing
     # gives weird results
     peaks = find_peaks(Ldata[goodinds],distance=dist,prominence=prom) # Find the maxima

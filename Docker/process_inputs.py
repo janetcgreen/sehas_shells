@@ -215,15 +215,20 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     :param evars (list): List of the energy channel names for POES
     :param Kpdata (list): List of Kp*10 for each time
     :param Kpmax_data (list):List of Kp*10_max_3d for each time
+     NOTE: we use KpX10 for both because that is what was in omni
     :param out_scale (str): Name of the output transform file for the NN
     :param in_scale (str): Name of the input transform file for the NN
     :param hdf5 (str): Name of file used by the NN
-    :param L (list(list)): list of single L values for each xyz or a fixed set for every time
-    :param Bmirrors (list(list)): list of Bmirrors for every time step or a fixed set
-    :param Energies (list): list of electron energies to return
+    :param L (list(list)): list of single L (3-6.3) values for each xyz or a fixed set for every time
+           Values outside the valid range are flagged (eflux_flag = -1.0e31)
+    :param Bmirrors (list(list)): list of Bmirrors for every time step or a fixed set (nT)
+    :param Energies (list): list of electron energies to return 200-3000 (keV)
     :return:
     '''
 
+    eflux_flag = -1.0e31 # flag for output bad fluxes
+    input_flag = -99 # flag for input data which is log10(flux)
+    # NOTE: The flag used for the input data is -99
     # List of energies for the output data
     if Energies is None:
         # If no Energies are passed assume these
@@ -238,14 +243,17 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
     if L is None:
         L = np.arange(3., 6.3, 1)
 
-    # Check for -1 where L>7.5
-    # Sometimes this happens in the input data because the POES orbit does not
-    # go out very far. In that case, set flux to neighboring values
+    # Check for bad values in the input data (input_flag = -99)
+    # Sometimes nans/infs occur in the input data because the POES orbit does not
+    # go out to the last L bin. All nans and infs in the data are set to -99
+    # before being written to output files ingested into CCMC HAPI
+    # Set flag flux to neighboring values because the nn can't use them
 
     # Step through each POES energy channel to
     # set the flux equal to the neighbor where it is bad
     for wco in range(0, len(evars)):
-        bad_inds = np.where((data[evars[wco]][:]) < 0)
+        # Check for flagged inputs <-98 just in case there are floating point issues
+        bad_inds = np.where((data[evars[wco]][:]) <=(input_flag+1) )
         if len(bad_inds[0]) > 0:
             for bco in range(0, len(bad_inds[0])):
                 # Set the flux equal to the neighbor
@@ -261,19 +269,19 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
 
     l, w = np.shape(new_dat)
 
-    # Output will be data['E flux'][time X L X E]
-    # data['upperq'] [timeXLXE] upper quantile
-    # data['lowerq'] [timexLXE] lower quantile
+    # Output will be data['E flux'][time, L(Bmirror), E]
+    # data['upperq'] [time, L(Bmirror), E] upper quantile
+    # data['lowerq'] [time, L(Bmirror), E] lower quantile
 
     # Create a dict for the output data
     outdat = {}
     outdat['L'] = L # This could be 1D or 2D
     outdat['Bmirrors'] = Bmirrors # This could be 1d or 2d
-    outdat['Energies'] = Energies # This should be 1d
+    outdat['Energies'] = Energies # This should always be 1d
 
     # Then create arrays for flux at each Energy and E quantiles
 
-    # Need to check if Bmirrors/Ls is 1D or 2d
+    # First check if Bmirrors/Ls is 1D or 2d
     # If its 2D then its an xyz request and will have different
     # Bmirror/L values for each time step
     # If Bmirrors is 1D then it is a fixed set of Bmirrors for every step
@@ -285,42 +293,35 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
 
     # Define the output columns
     colstart = 'E flux'
-    # JGREEN Changed the output so that it has outdat['E flux][time,L,E]
-    # For the new version outdat will be ['E flux'] np.zeros(0,Bw,len(Es))
-    # Any bad data will be left as -1
+    # JGREEN 9/2023 Changed the output so that it has outdat['E flux][time,L(Bmirror),E]
+    # For the new version outdat will be ['E flux'] np.full(l,Bw,len(Es))
+    # Any bad data will be left as eflux_flag
     Elen = len(Energies)
-    outdat[colstart] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
-    outdat['upper q'] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
-    outdat['lower q'] = np.full((l,Bw,Elen),dtype = float,fill_value=-1) #timeXBwXE
+    outdat[colstart] = np.full((l,Bw,Elen),dtype = float,fill_value=eflux_flag) #timeXBwXE
+    outdat['upper q'] = np.full((l,Bw,Elen),dtype = float,fill_value=eflux_flag) #timeXBwXE
+    outdat['lower q'] = np.full((l,Bw,Elen),dtype = float,fill_value=eflux_flag) #timeXBwXE
 
-    #for E in Energies:
-    #    # I changed this so that the output will be timeXBmirrors (or pitch angles)
-    #    col = colstart + str(int(E))
-    #    outdat[col] = np.zeros((0, Bw), dtype=float)
-    #    colh = colstart + str(int(E)) + ' upper q'
-    #    outdat[colh] = np.zeros((0, Bw), dtype=float)
-    #    coll = colstart + str(int(E)) + ' lower q'
-    #    outdat[coll] = np.zeros((0, Bw), dtype=float)
-
-    outdat['time'] = list() # same times will be returned except bad data
+    outdat['time'] = list() # same times will be returned
     outdat['Kp'] = list() # same Kp will be returned
     outdat['Kpmax'] = list() # same Kpmax will be returned
 
     # Step through each time step in the input data and do the nn
     for pco in range(0, l):
         # The input needs Kp, Kpmax, E, Bmirror for each L
-        # Check that the input data does not have Nans
-        check_dat = np.where((np.isnan(new_dat[pco][:])) | (new_dat[pco][:] < 0))[0]
+        # Check that the input data does not have bad values
+        check_dat = np.where((np.isnan(new_dat[pco][:])) | (new_dat[pco][:] < (input_flag+1)))[0]
         # Append the current value to the outdat list
         outdat['time'].append(data['time'][pco])
+        # Write out regular Kp but the nn uses Kp*10 and Kpmax*10
         outdat['Kp'].append(Kpdata[pco] / 10)
         outdat['Kpmax'].append(Kpmax_data[pco] / 10)
 
+        # Only do the nn if the inputs are good
         if len(check_dat) < 1:
 
             # The NN code can calculate flux for all Ls/Bm at once
-            kp = np.tile(Kpdata[pco], Bw)  # Create an array of Kp for each Bmirror
-            maxkp = np.tile(Kpmax_data[pco], Bw)  # Create anarray of maxKp for each Bmirror
+            kp = np.tile(Kpdata[pco], Bw)  # Create an array of Kp*10 for each Bmirror
+            maxkp = np.tile(Kpmax_data[pco], Bw)  # Create anarray of maxKp*10 for each Bmirror
             # Create an array of POES data to be used for each Bmirror calc
             poes = np.tile(new_dat[pco:pco + 1], (Bw, 1))
 
@@ -353,21 +354,27 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
                                         poes), axis=1)
                 # This returns the lowerq, log(flux), upperq data for one E and Bmirror(L) at each L
                 # fpre is Bmirrors,Ls X 3 where the 3 cols are upper q, log flux and lower q
-                fpre = out_scale.inverse_transform(hdf5.predict(in_scale.transform(nn_input),verbose=0))
+                # fpre outputs log(flux)
+                fprelog = out_scale.inverse_transform(hdf5.predict(in_scale.transform(nn_input),verbose=0))
                 #cols = [colstart + str(int(Energies[eco])) + ' upper q',
                 #        colstart + str(int(Energies[eco])),
                 #        colstart + str(int(Energies[eco])) + ' lower q', ]
 
-                # Set fpre where Bm is negative or L is negative to -1
-                # Todo make sure this works for a list of Bms and Ls
-                badmaginds = np.where(np.array(Bthis)<0)[0]
+                # JGREEN 09/2023 Changed output to flux instead of log(flux)
+                # for the decision tool
+                # Todo check why fpre is float32
+                fpre=np.exp(np.float64(fprelog))
+                # Set fpre where Bm is negative or L is negative to 0
+                # The magephem code outputs negiative Bm in the loss cone
+                badmaginds = np.where((np.array(Bthis)<0) | (np.array(Lthis)<0))[0]
                 fpre[badmaginds,:]=0
-                bigLinds = np.where((np.array(Lthis)>6.3) |(np.array(Lthis)<3.0) )[0]
-                fpre[bigLinds, :] = -1
+                # Set out of bounds to a flag
+                bigLinds = np.where((np.array(Lthis)>6.3) |((np.array(Lthis)<3.0) & (np.array(Lthis)>0.0)) )[0]
+                fpre[bigLinds, :] = eflux_flag
                 # Changed to just 3 cols and added energy as another dimension
-                cols = ['upper q',
+                cols = ['lower q',
                         colstart,
-                        'lower q', ]
+                        'upper q', ]
                 for cco in range(0, len(cols)):
                     # If there is multiple Bms then each energy channel will be [timeXBm]
                     #temp = outdat[cols[cco]][:] # Get the current data for that energy col

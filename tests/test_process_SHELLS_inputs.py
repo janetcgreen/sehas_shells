@@ -311,7 +311,7 @@ class test_process_shells_inputs(unittest.TestCase):
         if len(flist)>0:
             with open(flist[0], 'r') as openfile:
                 testfile = pd.read_csv(openfile).to_dict(orient='list')
-            if len(testfile['time'])>56:
+            if len(testfile['time'])>=56:
                 testit = 1
             else:
                 testit=0
@@ -369,7 +369,7 @@ class test_process_shells_inputs(unittest.TestCase):
         if len(flist)>0:
             with open(flist[0], 'r') as openfile:
                 testfile = json.load(openfile)
-            if len(testfile['time'])>56:
+            if len(testfile['time'])>=56:
                 testit = 1
             else:
                 testit=0
