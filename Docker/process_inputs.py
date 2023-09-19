@@ -387,6 +387,192 @@ def run_nn(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, B
 
     return outdat
 
+def run_nn_fast(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=None, Bmirrors=None, Energies=None):
+    '''
+    PURPOSE: To take the values in data, apply the shells neural network and
+    then output the electron flux (with fewer loops than before)
+
+    :param data (dict): Dict with data[ecol][timeXL] for each of the 4 POES energy channels
+    :param evars (list): List of the energy channel names for POES
+    :param Kpdata (list): List of Kp*10 for each time
+    :param Kpmax_data (list):List of Kp*10_max_3d for each time
+     NOTE: we use KpX10 for both because that is what was in omni
+    :param out_scale (str): Name of the output transform file for the NN
+    :param in_scale (str): Name of the input transform file for the NN
+    :param hdf5 (str): Name of file used by the NN
+    :param L (list(list)): list of single L (3-6.3) values for each xyz or a fixed set for every time
+           Values outside the valid range are flagged (eflux_flag = -1.0e31)
+    :param Bmirrors (list(list)): list of Bmirrors for every time step or a fixed set (nT)
+    :param Energies (list): list of electron energies to return 200-3000 (keV)
+    :return:
+    '''
+    import time
+    eflux_flag = -1.0e31 # flag for output bad fluxes
+    input_flag = -99 # flag for input data which is log10(flux)
+    # NOTE: The flag used for the input data is -99
+    # List of energies for the output data
+    if Energies is None:
+        # If no Energies are passed assume these
+        Energies = np.arange(200.0, 3000.0, 200.0)
+
+    # The Bmirror values for the output at each l
+    if Bmirrors is None:
+        # This is for the B value nearest the equator
+        Bmirrors = [2.591e+04 * (l ** -2.98) for l in L]
+
+    # L values for the ouput corresponding to each bmirror
+    if L is None:
+        L = np.arange(3., 6.3, 1)
+
+    # Check for bad values in the input data (input_flag = -99)
+    # Sometimes nans/infs occur in the input data because the POES orbit does not
+    # go out to the last L bins. All nans and infs in the data are set to -99
+    # before being written to output files ingested into CCMC HAPI
+    # Set the flagged values to neighboring values because the neural network can't use them
+
+    # Step through each POES energy channel to
+    # set the flux equal to the neighbor where it is bad
+    for wco in range(0, len(evars)):
+        # Check for flagged inputs <-98 just in case there are floating point issues
+        bad_inds = np.where((data[evars[wco]][:]) <=(input_flag+1) )
+        if len(bad_inds[0]) > 0:
+            for bco in range(0, len(bad_inds[0])):
+                # Set the flux equal to the neighbor
+                data[evars[wco]][bad_inds[0][bco]][bad_inds[1][bco]] = data[evars[wco]][bad_inds[0][bco]][
+                    bad_inds[1][bco] - 1]
+
+    # The input data has timeXL for each energy in a dict
+    # Todo: allow the poes input data to be an array instead of a dict
+    # The older data was a dict but the HAPI CCMC data is an array
+    # The expected input for the nn is timeXL e1, timeXL e2 timeXL e3, timeXL e4
+    # So concatentate the dict into one  array
+    new_dat = np.array(data[evars[0]][:]) # Start with the first energy channel
+    for wco in range(1, len(evars)):
+        new_dat = np.append(new_dat, data[evars[wco]], axis=1)
+
+    l, w = np.shape(new_dat) # w for the poes inputs should be 116
+
+    # Output will be data['E flux'][time, L(Bmirror), E]
+    # data['upperq'] [time, L(Bmirror), E] upper quantile
+    # data['lowerq'] [time, L(Bmirror), E] lower quantile
+
+    # Create a dict for the output data
+    outdat = {}
+    outdat['L'] = L # This could be 1D or 2D
+    outdat['Bmirrors'] = Bmirrors # This could be 1d or 2d
+    outdat['Energies'] = Energies # This should always be 1d
+
+    # Then create arrays for flux at each Energy and E quantiles
+
+    # First check if Bmirrors/Ls is 1D or 2d
+    # If its 2D then its an xyz request and will have different
+    # Bmirror/L values for each time step
+    # If Bmirrors is 1D then it is a fixed set of Bmirrors to use for every step
+
+    if len(np.shape(Bmirrors))>1:
+        Bl, Bw = np.shape(Bmirrors) #(2D)
+    else:
+        Bw = len(Bmirrors) #1D
+
+    # Define the output columns
+    colstart = 'E flux'
+    # JGREEN 9/2023 Changed output so that it has outdat['E flux][time,L(Bmirror),E]
+    # For the new version outdat will be ['E flux'] np.full(l,Bw,len(Es))
+    # Out of bounds data is eflux_flag
+    Elen = len(Energies)
+    outdat[colstart] = np.full((l,Bw,Elen),dtype = float,fill_value=eflux_flag) #timeXBwXE
+    outdat['upper q'] = np.full((l,Bw,Elen),dtype = float,fill_value=eflux_flag) #timeXBwXE
+    outdat['lower q'] = np.full((l,Bw,Elen),dtype = float,fill_value=eflux_flag) #timeXBwXE
+
+    outdat['time'] = list() # same times will be returned
+    outdat['Kp'] = list() # same Kp will be returned
+    outdat['Kpmax'] = list() # same Kpmax will be returned
+
+    # Step through each time step in the input data and do the nn
+    pco=0
+    tstep = 100  # Use 10 time steps at once
+    while pco < l:
+        if (pco+tstep>l):
+            tstep=l-pco
+        # The input needs Kp, Kpmax, E, Bmirror for each L
+        # Check that the input data does not have bad values
+        # Append the current value to the outdat list
+        outdat['time'].extend(data['time'][pco:pco+tstep])
+        # Write out regular Kp but the nn uses Kp*10 and Kpmax*10
+        outdat['Kp'].extend([x/10 for x in Kpdata[pco:pco+tstep]] )
+        outdat['Kpmax'].extend([x/10 for x in Kpmax_data[pco:pco+tstep]])
+
+        # Only do the nn if the inputs are good
+        #if len(check_dat) < 1:
+        numEn = len(Energies)
+        # The NN code can calculate flux for many Ls/Bm,Es at once
+        # It accepts an array with rows E,B,L,Kp,kpmax,poes
+        # We build a big array for 10 time steps and each E,B,L pair
+
+        # This repeats the pstep Kps Bw*Energies times
+        # i.e if Kpdat[pco]=1 then it repeats that Bw*numEn and then goes to next
+        kp = np.repeat(Kpdata[pco:pco+tstep], Bw*numEn)
+        test = np.shape(kp)# Create an array of Kp*10 for each Bmirror
+        maxkp = np.repeat(Kpmax_data[pco:pco+tstep], Bw*numEn)  # Create anarray of maxKp*10 for each Bmirror
+        # Create an array of POES data to be used for each Bmirror calc
+        poes = np.repeat(new_dat[pco:pco + tstep], (Bw*numEn), axis=0)
+
+        # Check if Bmirrors is 2D or 1D
+        if len(np.shape(Bmirrors))>1:
+            #Bthis = Bmirrors[pco:pco+1]
+            Bs = np.tile(Bmirrors[pco:pco+tstep],(numEn))
+        else:
+            #Todo check this works
+            Bs = np.tile(Bmirrors,numEn*tstep)
+
+        # Check if L is 2D or 1D
+        if len(np.shape(L))>1:
+            Ls = np.tile(L[pco:pco + tstep], (numEn))
+        else:
+            Ls = np.tile(L,numEn*tstep)
+
+        # If there is just one L then need to repeat it for each Bmirror
+        # if len(Lthis) != len(Bthis):
+        #  Lthis = np.tile(Lthis, Bw)
+
+        es = np.tile(np.repeat(Energies,Bw),tstep)
+
+        new_nn_input = np.concatenate((np.array(es).reshape(-1, 1), np.array(Bs).reshape(-1, 1),
+                                        np.array(Ls).reshape(-1, 1), np.array(kp).reshape(-1, 1),
+                                        np.array(maxkp).reshape(-1, 1),
+                                        poes), axis=1)
+        fprelognew = out_scale.inverse_transform(hdf5.predict(in_scale.transform(new_nn_input), verbose=0))
+        # That should have E1 B1,E1 B2, E2 B1 E2 B2
+
+        fprenew = np.exp(np.float64(fprelognew))
+        # Now set flags
+        # If L or Bmirror is negative then fprenew =0 (This should be loss cone)
+        badmaginds = np.where((np.array(Bs.reshape(-1,1)) < 0) | (np.array(Ls.reshape(-1,1)) < 0))[0]
+        fprenew[badmaginds, :] = 0
+        # If the L i sout of bounds then
+        outLinds = np.where( ((np.array(Ls.reshape(-1,1)) > 0) & (np.array(Ls.reshape(-1,1)) < 3)) | (np.array(Ls.reshape(-1,1)) > 6.3) )[0]
+        fprenew[outLinds, :] = eflux_flag
+        # Also check bad Kp because the returned flux will be suspect
+        badKps = np.where((np.array(kp) < 0) | (np.array(maxkp) < 0) )[0]
+        fprenew[badKps, :] = eflux_flag
+        cols = ['lower q',
+                colstart,
+                'upper q', ]
+        for cco in range(0, len(cols)):
+            # Reshape the output with a few steps to get the energies and pitch angles in the right spot
+            # First reshape to get all the fluxes for each time
+            retime = np.reshape(fprenew[:, cco],(tstep,Bw*numEn))
+            # Then reshape with pitch angle and energy
+            repitch = np.reshape(retime, (tstep, Bw, numEn),'F')
+            #outdat[cols[cco]][pco:pco+tstep, :, :] = np.reshape(fprenew[:, cco],(tstep,Bw,(len(Energies))))
+            outdat[cols[cco]][pco:pco+tstep, :, :] = repitch
+            # outdat[cols[cco]] = (np.vstack((temp, fpre[:, cco]))).tolist()
+        pco = pco + tstep
+    # I think this needs to be a list
+    for cco in range(0, len(cols)):
+        outdat[cols[cco]] = outdat[cols[cco]].tolist()
+
+    return outdat
 
 def process_data(time, Ls, Bmirrors, Energies):
     '''
@@ -462,7 +648,7 @@ def process_data(time, Ls, Bmirrors, Energies):
         # The way the call to magephem works, this will always return a 2D array
         # for Ls and Bmirrors
 
-        outdat = run_nn(map_data, channels, map_data['Kp*10'], map_data['Kp_max'],
+        outdat = run_nn_fast(map_data, channels, map_data['Kp*10'], map_data['Kp_max'],
                         out_scale, in_scale, hdf5, L=Ls, Bmirrors=Bmirrors,
                         Energies=Energies)
 

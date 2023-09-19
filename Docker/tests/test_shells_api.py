@@ -6,6 +6,7 @@ import netCDF4 as nc4
 import datetime as dt
 import numpy as np
 from dotenv import load_dotenv
+import matplotlib.pyplot as plt
 
 app_path = os.path.join(os.path.dirname( __file__ ), '..')
 sys.path.insert(0, app_path)  # take precedence over any other in path
@@ -33,7 +34,6 @@ def test_config():
     print(create_app("default_config").testing)
     assert not create_app("default_config").testing
     assert create_app("test_config").testing
-
 
 def test_request_example2(client):
     # TEST: Check that the output from the app matches the expected output
@@ -81,17 +81,19 @@ def test_request_example2(client):
 
     response = app.test_client().post("/shells_io",data=data,content_type='application/json')
 
+    temp = response.json
+
     # Now compare test_data for the same L and energy
     # Get the right index for the L value we fixed in the app
     # Todo figure out how to set this directory
     with open("../test_config.py",'r') as f:
         lines = f.readlines()
     for line in lines:
-        if line[0:5]=='TESTL':
+        if line[0:5] == "TESTL":
             Lval = float(line[7::])
 
-    Lind = np.where(test_data['L'][:] ==Lval)[0]
-    temp = response.json
+    Lind = np.where(test_data['L'][:] == Lval)[0]
+
 
     for E in energies:
         col = 'E flux '+str(E)
@@ -179,7 +181,7 @@ def test_request_with_omni(client):
     # The test bit will emulate the correct magepehem response
     # based on the number of pitch angles passed
 
-    print('Testing that app output matches previous shells output with omni')
+    print('Testing that omni works as ecpected')
 
     # First read in the netcdf file that the test will compare to
     fname = 'shells_neural20220101.nc'
@@ -275,7 +277,7 @@ def test_int_out_of_bounds(client):
     # The test bit will emulate the correct magepehem response
     # based on the number of pitch angles passed
 
-    print('Testing omni out of bounds')
+    print('Testing integral out of bounds')
 
     # First read in the netcdf file that the test will compare to
     fname = 'shells_neural20220101.nc'
@@ -324,7 +326,7 @@ def test_request_with_integral(client):
     # The test bit will emulate the correct magepehem response
     # based on the number of pitch angles passed
 
-    print('Testing that app output matches previous shells output with omni')
+    print('Testing that integral works')
 
     # First read in the netcdf file that the test will compare to
     fname = 'shells_neural20220101.nc'

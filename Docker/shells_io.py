@@ -108,6 +108,7 @@ class IOList(MethodView):
         # to integrate the returned shells flux
         if io_data["pitch_angles"][0] == -1:
             pstep=5
+            #pstep=20
             io_data["pitch_angles"] = list(range(pstep,91,pstep))
             omni = True
         else:
@@ -118,10 +119,12 @@ class IOList(MethodView):
             # Create a list of energies in log space from the given value to 3000 keV
             # Make sure there is reasonable sampling from the passed energy
             # up to the max energy (3000 keV) and at least two energies to integrate
-            if (np.log10(3000)-np.log10(np.abs(io_data['energies'][0])))<=.15:
+            estep=.15
+            #estep = .5
+            if (np.log10(3000)-np.log10(np.abs(io_data['energies'][0])))<=estep:
                 Es = [np.abs(io_data['energies'][0]),3000]
             else:
-                Es = list(10**np.arange(np.log10(np.abs(io_data['energies'][0])), np.log10(3000),.15))
+                Es = list(10**np.arange(np.log10(np.abs(io_data['energies'][0])), np.log10(3000),estep))
                 # Set the last point to the last valid energy (3000)
                 if Es[-1]<3000:
                     Es = Es +[3000]
@@ -178,14 +181,16 @@ class IOList(MethodView):
             magephem_response = {}
             # The TESTL value is set in the test_config.py
             Lval = current_app.config["TESTL"] # Its set to 4 for now
-            magephem_response["L"] = [[Lval]]*len(io_data["time"])
             Bmirror = np.floor(2.591e+04 * (Lval ** -2.98))
             # Create a faxe Bmirror response
             if len(io_data["pitch_angles"])>1:
                 Bvals = [Bmirror] * len(io_data["pitch_angles"])
+                Lvals = [Lval]* len(io_data["pitch_angles"])
                 magephem_response["Bm"] = [Bvals] * len(io_data["time"])
+                magephem_response["L"] = [Lvals] * len(io_data["time"])
             else:
                 magephem_response["Bm"] = [[Bmirror]]*len(io_data["time"])
+                magephem_response["L"] = [[Lval]] * len(io_data["time"])
         else:
 
             resp = requests.post(url, json=magephem_input)
