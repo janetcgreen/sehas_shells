@@ -1,10 +1,9 @@
 import logging
 import os
+import requests
 import sqlite3 as sl
 from bisect import bisect_right
 
-import requests
-from flask import current_app
 # Get rid of the message about tensorflow optimization
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import keras
@@ -12,7 +11,6 @@ import numpy as np
 from joblib import load
 from flask import current_app
 import datetime as dt
-import requests
 
 def qloss(y_true, y_pred):
     qs = [0.25, 0.5, 0.75]
@@ -70,8 +68,8 @@ def read_hapi_inputs(req_times,server,dataset):
     iswa_data = requests.get(query[0:-1]) # query will have an extra &
     hapi_data = {} # dict for refromatting the returned data
 
-    # Check that ther was a valid response
-    if iswa_data.status_code==200:
+    # Check that there was a valid response
+    if iswa_data.status_code == 200:
 
         # Get a list of the col names
         iswa_json= iswa_data.json()
@@ -93,7 +91,7 @@ def read_hapi_inputs(req_times,server,dataset):
                 allinds= [cols.index(x) for x in alles]
                 hapi_data[ecol]=cdata[:,allinds].astype(iswa_json['parameters'][allinds[0]]['type'])
         else:
-            hapi_data= None
+            hapi_data = None
     else:
         hapi_data = None
 
@@ -114,6 +112,7 @@ def reorg_hapi(in_times,hdata):
         else:
             map_data[key] = hdata[key][nearest_pos]
     return map_data
+
 def read_db_inputs(req_times):
     '''
 
@@ -434,6 +433,9 @@ def process_data(time, Ls, Bmirrors, Energies):
                 server = os.environ.get('HAPI_SERVER')
                 dataset = os.environ.get('HAPI_DATASET')
                 hapi_data = read_hapi_inputs(time, server, dataset)
+                if hapi_data is None:
+                    # If no data is returned, set status_code to 204 and exit
+                    return outdat, 204
 
                 # get the closest hapi data to the times in time
                 map_data = reorg_hapi(time,hapi_data)
@@ -445,6 +447,9 @@ def process_data(time, Ls, Bmirrors, Energies):
             server = os.environ.get('HAPI_SERVER')
             dataset = os.environ.get('HAPI_DATASET')
             hapi_data = read_hapi_inputs(time, server, dataset)
+            if hapi_data is None:
+                # If no data is returned, set status_code to 204 and exit
+                return outdat, 204
 
             # get the closest hapi data to the times in time
             map_data = reorg_hapi(time, hapi_data)
@@ -473,4 +478,4 @@ def process_data(time, Ls, Bmirrors, Energies):
         print(e)
         logging.error(e)
 
-    return outdat
+    return outdat, 200

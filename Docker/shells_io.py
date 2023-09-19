@@ -5,8 +5,8 @@ import os
 import numpy as np
 import process_inputs as pi
 from flask.views import MethodView
-from flask_smorest import Blueprint
-from flask import current_app
+from flask_smorest import Blueprint, abort
+from flask import current_app, make_response
 from schemas import InSchema
 from schemas import InLSchema
 
@@ -102,6 +102,16 @@ class IOList(MethodView):
         # 4) list of pitch angles (to be used for all times) (ex [[20,40]])
         # 5) sys coordinate system
 
+        # Iterate through the energy list and check if any absolute energy value is less than 200 or greater than 3000
+        for energy in io_data["energies"]:
+            if abs(energy) < 200 or abs(energy) > 3000:
+                abort(405, message="SHELLS: Invalid energy inputs")
+
+        # Iterate through the pitch_angle list and check if any pitch_angle value is less than -1 or greater than 90
+        for angle in io_data["pitch_angles"]:
+            if angle < -1 or angle > 90:
+                abort(405, message="SHELLS: Invalid pitch_angle inputs")
+
         # First check if the pitch angles are [-1]
         # In that case, return omni flux integrated over pitch angles by
         # first getting the flux at a fixed set of pitch angles and setting a flag
@@ -189,36 +199,43 @@ class IOList(MethodView):
         else:
 
             resp = requests.post(url, json=magephem_input)
-            magephem_response = resp.json()
 
-            # Check the magephem response and if it gets a 500 or other errors
-            # then exit with error code
+            # Check the magephem response, and if any errors are encountered, exit with an error description
             if resp.status_code != 200:
                 # The magephem "hardcoded" post responses are 200 ("successful operation") and 405 ("Invalid input")
-                # If an error occurs, we'll check first if the response is 405. If not, we'll check the other
-                # "standard" responses
+                # If an error occurs, we'll check first if the response is 405. If not, we'll check the other responses
                 if resp.status_code == 405:
-                    error_desc = "magephem error 405: Invalid input"
+                    abort(405, message="magephem: Invalid inputs")
                 else:
-                    error_desc = "magephem error {}: {}".format(magephem_response['status'], magephem_response['title'])
-                return error_desc
+                    abort(resp.status_code, message="magephem: {}".format(resp.reason))
+
+            magephem_response = resp.json()
 
         # Here we pass a list of times, a list of Ls for each time i.e. [[L1]],
         # and a list of [Bms] for each time [[Bm]]
         # Bm and L will have multiple values if multiple pitch angles are requested
         # and the list of energies requested
-        #print('Processing data')
-        output = pi.process_data(io_data["time"], magephem_response["L"], magephem_response["Bm"], io_data["energies"])
+        # print('Processing data')
+        output, status_code = pi.process_data(io_data["time"], magephem_response["L"], magephem_response["Bm"], io_data["energies"])
+
+        # # Check the output status, and if any errors are encountered, exit with an error description
+        if status_code == 204:
+            # Note that in Flask, when you set a non-standard HTTP status code, some web browsers may not display the
+            # response message. This behavior is not specific to Flask but rather a result of how certain browsers
+            # handle non-standard status codes. In such cases, you might not see the response message in the browser,
+            # even though the server sent it.
+            return make_response("SHELLS: No content is returned", 204)
 
         # The output will be a json dict
-        # output has time, L, E flux[time,pa,Energy], Kp,Kpmax
-        # return the user reqested pitch angles as well
+        # output has time, L, E flux[time,pa,Energy], Kp, Kpmax
+        # return the user requested pitch angles as well
         # outdat['L'], outdat['Bmirrors'], outdat['Energies'], Kpmax, Kp are all set in process_data
 
         # For the omni case the pitch_angles returned are the ones used for integration
         # For the integral case, the energies returned are the ones used for integration
-        output['pitch_angles']= io_data["pitch_angles"]
+        output['pitch_angles'] = io_data["pitch_angles"]
         eflux_fill=-1.0e31
+
         if omni ==True:
             # Integrate the flux and quartiles over pitch angles
             for col in ['E flux','upper q','lower q']:
