@@ -42,6 +42,8 @@ def integ_exp(temp_flux,Es):
 class IOList(MethodView):
     @blp.arguments(InSchema)
     @blp.response(200)
+    @blp.alt_response(204,description="No model input data is returned")
+    @blp.alt_response(405, description="Invalid inputs or no magnetic ephemeris service")
     # InSchema is defined in schema.py
     # There is no fixed output schema in blp.response because the output varies
     def post(self, io_data):
@@ -49,11 +51,11 @@ class IOList(MethodView):
          local pitch angles, and energies
 
         Returns electron flux from the SHELLS model (valid between L=3-6.3)
-        for input times, locations, local pitch angles, and energies (200-3000 kev)<br>
+        for input times, locations, local pitch angles (0-90), and energies (200-3000 keV)<br>
 
         Required inputs:<br>
-        - time: list of dates and times with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
-        - xyz: list of 3-D locations for each time
+        - time: list of dates and times (max 10,000 points) with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
+        - xyz: list of 3-D locations for each time (max 10,000 points)
         - sys: coordinate system for xyz locations
             + Supports GDZ, GEO, GSM, GSE, SM, GEI, MAG, SPH.
             + GDZ - geodetic as alt (km), latitude (deg), longitude (deg).
@@ -63,30 +65,30 @@ class IOList(MethodView):
             + GEI - Cartesian geocentric Earth inertical (RE).
             + MAG - Cartesian magnetic.
             + SPH - Spherical geographic coordinates as radius (RE), latitude (deg), longitude (deg).
-        - pitch_angles: 1-D list of local pitch angles (0-90 deg) for the returned electron flux
-            or [-1] for omnidirectional flux
-        - energies: 1-D list of energies (between 200-3000 keV) for the returned electron flux
+        - pitch_angles: 1-D list of local pitch angles (0-90 deg, max 15 values) for the
+            returned electron flux or [-1] for omnidirectional flux
+        - energies: 1-D list of energies (between 200-3000 keV,max 15 values) for the returned electron flux
             or a single negative energy for integral flux above that energy i.e. [-200]<br>
         <br>
         Outputs: (dictionary of arrays that includes user inputs) <br>
-        - time: the same input list of dates and times with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
-        - xyz[time]: the same input list of 3-D locations for each time
+        - time: same input list of dates and times with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
+        - xyz[time]: same input list of 3-D locations for each time
         - pitch_angles: same as input list
         - Energies: same as input list
         - Bmirrors[time,pitch_angles]: Bmirror values for requested pitch angles and locations
         - L[time,pitch_angles]: L shells for requested pitch angles and locations
         - Kp[time]: Kp value for each time from the CCMC HAPI server
         - Kpmax[time]: The maximum Kp value in the last 3 days for each time step
-        - E flux[time,pitch_angles,energies] electron flux #/cm2-s-str-keV as a function of
+        - E flux[time,pitch_angles,energies]: electron flux #/cm2-s-str-keV as a function of
            time, pitch angles, and requested energies
            If omnidirectional flux is requested the returned E flux is a function of time and
            energy, i.e. E flux[time,energies] #/cm2-s-keV
            If integral flux is requested the returned E flux is as a function of time and
            pitch angle, i.e. E flux[time,pitch_angle] #/cm2-s-str
-        - upper q [time, pitch_angles, energies] upper quartile of electron flux #/cm2-s-str-keV
-           for each E flux
-        - lower q [time, pitch_angles, energies] lower quartile of electron flux #/cm2-s-str-keV
-           for each E flux
+           If both integral and omni are requeted the E flux is as a function of time
+           i.e. E flux[time] #/cm2-s
+        - upper q: upper quartile of electron for each E flux with same format and units as E flux
+        - lower q: lower quartile of electron for each E flux with same format and units as E flux
         """
 
         # The post method takes times, locations, pitch angles in io_data,
@@ -96,21 +98,11 @@ class IOList(MethodView):
         # locations and pitch angles
 
         # io_data should have
-        # 1) list of times ( ex ['2022-01-01T00:00:00.000Z','2022-01-01T00:00:00.000Z']
+        # 1) list of dates and times (max 10,000 points) with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
         # 2) list of [x,y,z] for those times (ex [[3,1,1],[3,1,2]])
         # 3) list of energies (to be used for all times) (ex [200,400,600] in keV)
         # 4) list of pitch angles (to be used for all times) (ex [[20,40]])
         # 5) sys coordinate system
-
-        # Iterate through the energy list and check if any absolute energy value is less than 200 or greater than 3000
-        for energy in io_data["energies"]:
-            if abs(energy) < 200 or abs(energy) > 3000:
-                abort(405, message="SHELLS: Invalid energy inputs")
-
-        # Iterate through the pitch_angle list and check if any pitch_angle value is less than -1 or greater than 90
-        for angle in io_data["pitch_angles"]:
-            if angle < -1 or angle > 90:
-                abort(405, message="SHELLS: Invalid pitch_angle inputs")
 
         # First check if the pitch angles are [-1]
         # In that case, return omni flux integrated over pitch angles by
@@ -202,34 +194,39 @@ class IOList(MethodView):
                 magephem_response["Bm"] = [[Bmirror]]*len(io_data["time"])
                 magephem_response["L"] = [[Lval]] * len(io_data["time"])
         else:
+            # Several errors can go wrong with magephem
+            # One is that it can't connect
+            try:
+                resp = requests.post(url, json=magephem_input)
 
-            resp = requests.post(url, json=magephem_input)
+                # Check the magephem response, and if any errors are encountered, exit with an error description
+                if resp.status_code != 200:
+                    # The magephem "hardcoded" post responses are 200 ("successful operation") and 405 ("Invalid input")
+                    # If an error occurs, we'll check first if the response is 405. If not, we'll check the other responses
+                    if resp.status_code == 405:
+                        abort(405, message="magephem: Invalid inputs")
+                    else:
+                        abort(resp.status_code, message="magephem: {}".format(resp.reason))
 
-            # Check the magephem response, and if any errors are encountered, exit with an error description
-            if resp.status_code != 200:
-                # The magephem "hardcoded" post responses are 200 ("successful operation") and 405 ("Invalid input")
-                # If an error occurs, we'll check first if the response is 405. If not, we'll check the other responses
-                if resp.status_code == 405:
-                    abort(405, message="magephem: Invalid inputs")
-                else:
-                    abort(resp.status_code, message="magephem: {}".format(resp.reason))
-
-            magephem_response = resp.json()
+                magephem_response = resp.json()
+            except:
+                abort(405, message="Can't connect to magnetic ephemeris service")
 
         # Here we pass a list of times, a list of Ls for each time i.e. [[L1]],
         # and a list of [Bms] for each time [[Bm]]
         # Bm and L will have multiple values if multiple pitch angles are requested
         # and the list of energies requested
-        # print('Processing data')
+        #
         output, status_code = pi.process_data(io_data["time"], magephem_response["L"], magephem_response["Bm"], io_data["energies"])
 
-        # # Check the output status, and if any errors are encountered, exit with an error description
+        # status_code:200 if successful, 204 if no HAPI inputs
+        # Check the output status, and if any errors are encountered, exit with an error description
         if status_code == 204:
             # Note that in Flask, when you set a non-standard HTTP status code, some web browsers may not display the
             # response message. This behavior is not specific to Flask but rather a result of how certain browsers
             # handle non-standard status codes. In such cases, you might not see the response message in the browser,
             # even though the server sent it.
-            return make_response("SHELLS: No content is returned", 204)
+            return make_response("SHELLS: No model input data is returned", 204)
 
         # The output will be a json dict
         # output has time, L, E flux[time,pa,Energy], Kp, Kpmax
@@ -291,7 +288,9 @@ class IOList(MethodView):
 @blp.route("/shells_io_L")
 class IOList(MethodView):
     @blp.arguments(InLSchema)
+    # These make the documentation in the swagger ui
     @blp.response(200)
+    @blp.alt_response(204, description="No data")
     # InSchema is defined in schema.py
     # There is no fixed output schema in blp.response because the output varies
     def post(self, io_data):
@@ -301,24 +300,23 @@ class IOList(MethodView):
         Bmirrors, and energies<br>
 
         Required inputs:<br>
-        - time: list of dates and times with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
-        - Ls: 1-D list of L shells for returned electron flux (ex [5,6])
+        - time: list of dates and times (max 10,000 points) with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
+        - Ls: 1-D list of L shells (3-6.3, max 15 values) for returned electron flux (ex [5,6])
         - Bmirrors: 1-D list of mirror point magnetic fields (nT) for each L shell.
         (ex [100,150]).
-        - energies: 1-D list of energies (between 200-3000 keV) for the returned electron flux<br>
+        - energies: 1-D list of energies (between 200-3000 keV, max 15 values) for the returned electron flux<br>
         <br>
         Outputs: (dictionary of arrays that includes user inputs) <br>
         - time: the same input list of dates and times with format 'YYYY-MM-DDTHH:MM:SS.fffuuuZ'
-        - xyz: the same input list of 3-D locations for each time
         - energies: same as input values
         - Bmirrors[time,L]: Bmirror values (nT) for the requested pitch angles and locations
         - L[time,Bmirrors]: L shells for the requested pitch angles and locations
         - Kp[time]: Kp value for each time from the CCMC HAPI server
         - Kpmax[time]: The maximum Kp value in the last 3 days
-        - E flux[time,L,energies] electron flux #/cm2-s-str-keV as a function of
+        - E flux[time,L/Bm,energies] electron flux #/cm2-s-str-keV as a function of
            time, Bmirror/L, and requested energies
-        - upper q [time, L,energies] upper quartile of the electron flux #/cm2-s-str-keV
-        - lower q [time, L, energies] lower quartile of the electron flux #/cm2-s-str-keV
+        - upper q [time, L/Bm,energies] upper quartile of the electron flux #/cm2-s-str-keV
+        - lower q [time, L/Bm, energies] lower quartile of the electron flux #/cm2-s-str-keV
         """
 
         # The post method takes times, Lshells, Bmirros  in io_data,
