@@ -1,0 +1,30 @@
+version: '3'
+services:
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - sehas-shells
+      - magephem
+    networks:
+      - sehas
+
+  sehas-shells:
+    image: sehas-shells-api:latest
+    ports:
+      - "8000:5000"  # Map port 8000 on the host to port 5000 in the container
+    networks:
+      - sehas
+
+  magephem:
+    image: magephem:latest
+    ports:
+      - "8001:23761"  # Map port 8001 on the host to port 23761 in the container
+    networks:
+      - sehas
+
+networks:
+  sehas:  # Define the 'sehas' network
