@@ -51,7 +51,7 @@ class InSchema(BaseSchema):
                 example = 'GEO',
                 validate=validate.And(validate.Length(min=1, max=3,error='Invalid coordinate system'),
                           validate.OneOf(choices=['GDZ','GEO','GSM','GSE','SM','GEI','MAG','SPH'],
-                                         error="Invalid Cooridnate System")))
+                                         error="Invalid Coordinate System")))
     energies = fields.List(fields.Float(), required=True,
                 description="1-D list of energies (200-3000 keV, max 15 values) for the returned electron flux"
                             "with increasing values or a negative energy for integral flux above that value",

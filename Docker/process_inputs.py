@@ -20,24 +20,67 @@ def qloss(y_true, y_pred):
     return keras.backend.mean(v)
 
 
-def get_nearest(list_dt, dt):
-    """
+def get_nearest(list_dt, dtpoint):
+    '''
+    PURPOSE: to get the nearest index of the time point before dtpoint
+    :param list_dt: HAPI data times
+    :param dt: a time to insert
+    :return:
     Assumes list_dt is sorted. Returns nearest position to dt.
 
-    bisect_left gives the index where the value will be inserted
+    bisect_right gives the index where the value will be inserted
     so the value of data we want is that index -1
     However, if the times are identical then it gives the index to
-    the left
+    the right
 
-    """
+    '''
+    # Check the list time format
+    # The app ahs .f but hapi time does not
+    try:
+        listdformat='%Y-%m-%dT%H:%M:%S.%fZ'
+        dt.datetime.strptime(list_dt[0], listdformat)
+    except:
+        listdformat = '%Y-%m-%dT%H:%M:%SZ'
 
-    pos = bisect_right(list_dt, dt)
+    # check the point format
+    try:
+        pformat='%Y-%m-%dT%H:%M:%S.%fZ'
+        dt.datetime.strptime(dtpoint, pformat)
+    except:
+        pformat = '%Y-%m-%dT%H:%M:%SZ'
+
+    pos = bisect_right(list_dt, dtpoint) # inserts dt into list_dt
+    # returns the index where it should go. If it is the same
+    # then it gives the index to the right.
+    # But if the value is before the first one it gives 0
+    # If it is identical to the first point then it gives 1
+    # The only time it gives 0 is when the time is before the
+    # first data point
 
     if pos == 0:
-        return 0
-    if pos == len(list_dt):
-        return len(list_dt)-1
+        # pos is 0 when the point is before the first time
+        # Return a -1 that is then flagged later
+        return -1
+    if pos == len(list_dt): # If the returned index is after the last point
+        # check how much after is it and flag it
+        # if its more than 3 hours
+        lasttime = list_dt[-1]
+        tdiff=(dt.datetime.strptime(dtpoint,pformat)-dt.datetime.strptime(lasttime,listdformat)).total_seconds()
 
+        if tdiff>3*3600:
+            # This will then flag the data
+            return -1
+        else:
+            return(len(list_dt)-1)
+
+    # if the point isn't after then end and its not before the start
+    # then check that the point just before is less than 3 hours before
+    lasttime = list_dt[pos-1]
+    tdiff = (dt.datetime.strptime(dtpoint, pformat) - dt.datetime.strptime(lasttime, listdformat)).total_seconds()
+    if tdiff>3*3600:
+        return -1
+
+    # Otherwise just return the position of the time before
     return pos-1
 
 def read_hapi_inputs(req_times,server,dataset):
@@ -100,17 +143,41 @@ def read_hapi_inputs(req_times,server,dataset):
 def reorg_hapi(in_times,hdata):
     '''
 
-    :param in_time:
-    :param hdata:
+    :param in_time:list of times
+    :param hdata:poes intputs from hapi dbase as a dict of numpy arrays
     :return:
     '''
+    # nearest_pos gives the index of the hapi time just before it
+
     nearest_pos = np.array([get_nearest(list(hdata['time']),t) for t in in_times])
+    # Need to deal with indexes that are -1 (before the first poes times)
+    goodpos=np.copy(nearest_pos)
+    badinds = np.where(nearest_pos < 0)[0] # Make a list of thes bad indices
+    goodpos[badinds]=0 # Set the -1s to 0' so that it will work but flag them after
+
+    # If the datapoint is before the first time or after
+    # the last time more than 3 hours it returns pos=-1
+    # So need to check those and set the data to a flag that will
+    # be recognized later
     map_data={}
     for key in hdata.keys():
-        if len(np.shape(hdata[key]))>1:
-            map_data[key] = hdata[key][nearest_pos,:]
+        if len(np.shape(hdata[key][:]))>1:
+            # Nearest_pos is sometimes -1 if there is no poes data before
+            # So use goodpos which has the -1s set to 0 but then flag the bad points
+            map_data[key] = hdata[key][goodpos,:]
+            # Then flag the bad ones
+            map_data[key][badinds,:] = -99
+
         else:
-            map_data[key] = hdata[key][nearest_pos]
+            if key != 'time':
+                # Don't flag the time colum, just the data colums
+                map_data[key] = hdata[key][goodpos]
+                # Set data before the first poes time to -99
+                map_data[key][badinds] = -99
+            else:
+                # If its time, we give it a value but the
+                # mapped data gets written over anyway
+                map_data[key] = hdata[key][goodpos]
     return map_data
 
 def read_db_inputs(req_times):
@@ -142,9 +209,22 @@ def read_db_inputs(req_times):
         input_times = [item[0] for item in rows1]
 
         # Find the input poes position nearest to the requested times in the CCMC HAPI database
-        nearest_pos = [get_nearest(input_times, t) for t in req_times]
-        rows = [rows1[x] for x in nearest_pos]
+        nearest_pos = np.array([get_nearest(input_times, t) for t in req_times])
+        goodpos = np.copy(nearest_pos)
+        # nearest_pos returns a -1 for times outside the range
+        # need to do something different here where rows1[x]==0
+        badinds = np.where(nearest_pos<0)[0]
+        goodpos[badinds]=0
+        #[nearest_pos[x]=0 for x in badinds]
+        rows = [list(rows1[x]) for x in nearest_pos]
 
+        # flag rows where nearest_pos is -1
+
+        for val in badinds:
+            rows[val]=[aa if i<1 else -99.0 for i,aa in enumerate(rows[val])]
+
+        #temprows[zeroinds,1::]=-99.0
+        #rows = list(temprows)
         # Get the actual times to make sure it works right
         #nearest_times = [input_times[x] for x in nearest_pos]
 
@@ -407,7 +487,7 @@ def run_nn_fast(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=No
     '''
     import time
     eflux_flag = -1.0e31 # flag for output bad fluxes
-    input_flag = -99 # flag for input data which is log10(flux)
+    input_flag = -99.0 # flag for input data which is log10(flux)
     # NOTE: The flag used for the input data is -99
     # List of energies for the output data
     if Energies is None:
@@ -433,7 +513,7 @@ def run_nn_fast(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=No
     # set the flux equal to the neighbor where it is bad
     for wco in range(0, len(evars)):
         # Check for flagged inputs <-98 just in case there are floating point issues
-        bad_inds = np.where((data[evars[wco]][:]) <=(input_flag+1) )
+        bad_inds = np.where((data[evars[wco]][:]) <= (input_flag+1))
         if len(bad_inds[0]) > 0:
             for bco in range(0, len(bad_inds[0])):
                 # Set the flux equal to the neighbor
@@ -552,6 +632,7 @@ def run_nn_fast(data, evars, Kpdata, Kpmax_data, out_scale, in_scale, hdf5, L=No
         outLinds = np.where( ((np.array(Ls.reshape(-1,1)) > 0) & (np.array(Ls.reshape(-1,1)) < 3)) | (np.array(Ls.reshape(-1,1)) > 6.3) )[0]
         fprenew[outLinds, :] = eflux_flag
         # Also check bad Kp because the returned flux will be suspect
+        # This will also flag the points that don't have poes data near it
         badKps = np.where((np.array(kp) < 0) | (np.array(maxkp) < 0) )[0]
         fprenew[badKps, :] = eflux_flag
         cols = ['lower q',
@@ -597,9 +678,11 @@ def process_data(time, Ls, Bmirrors, Energies):
         # and a model_quantile HDF5 file. All are defined in .env
 
         #print(os.environ.get('OUT_SCALE_FILE'))
-        out_scale = load(os.environ.get('OUT_SCALE_FILE'))
-        in_scale = load(os.environ.get('IN_SCALE_FILE'))
-        hdf5 = keras.models.load_model(os.environ.get('HDF5FILE'), custom_objects={'loss': qloss}, compile=False)
+        basedir = os.path.abspath(os.path.dirname(__file__))
+
+        out_scale = load(basedir+os.environ.get('OUT_SCALE_FILE'))
+        in_scale = load(basedir+os.environ.get('IN_SCALE_FILE'))
+        hdf5 = keras.models.load_model(basedir+os.environ.get('HDF5FILE'), custom_objects={'loss': qloss}, compile=False)
 
         # POES electron flux channel names
         channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3', 'mep_ele_tel90_flux_e4']
