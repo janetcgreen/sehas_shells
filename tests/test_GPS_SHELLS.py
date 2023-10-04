@@ -129,7 +129,7 @@ class test_GPS_shells(unittest.TestCase):
         sat = "PRN 32"
         odir = os.getcwd()
         ndays = 2
-        tstep=10
+        tstep=.3
         oname = 'GPS_SHELLS_test_'
         fname = oname+str(ndays)+'day.txt'
         ofile = glob.glob(os.path.join(odir,fname))

@@ -8,7 +8,6 @@ import requests
 import sys
 from collections import OrderedDict
 
-
 import numpy as np
 
 from dotenv import load_dotenv
@@ -17,6 +16,7 @@ app_path = os.path.join(os.path.dirname( __file__ ), '..','Docker')
 sys.path.insert(0, app_path)  # take precedence over any other in path
 import process_inputs as pi
 from app import create_app
+from flask import current_app
 
 def valid_date(s):
     '''
@@ -87,44 +87,49 @@ def fixed_files_shells(sdate=None,edate=None,realtime=False,
         edate=(sdate+dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         sdate=sdate.replace(minute=0, second=0, microsecond=0) # Force it to start on an hour
 
-    #edate = sdate+dt.timedelta(hours=24)
-    tform = '%Y-%m-%dT%H:%M:%S.%fZ'
+    tform = '%Y-%m-%dT%H:%M:%S.%fZ'# Time format to work with
 
     # Step through in day increments
+    print("Running data")
     while sdate<=last_edate:
         # Create and format the time array between sdate and edate at timestep tstep
-        times = make_times(sdate, edate, tstep)
+        times = make_times(sdate, edate, tstep) # Returns a list of datetimes
         times_form = [time.strftime(tform) for time in times] # reformat time string for app
-        #print(times_form)
 
-        # Specify the json file name
+        # Specify the json output file name
         fname = f"shells_fixed_{times[-1].strftime('%Y%m%d')}.json"
 
+        # This uses the code from the app but since we do not need the
+        # magephem service we don't actually have to call it from the service.
         # We need to use functionality that requires an application context
         # Set up an application context with app.app_context()
         # to avoid RuntimeError: working outside of application context
         # app = create_app(test_config="test_config")
+        print("Starting app")
         if testing==True:
             app = create_app(test_config="test_config")
         else:
             app = create_app()
+            print("Created app")
         app.app_context().push()
 
+        #print("Push contect")
         # In the normal shells usage we have a list of Ls and Bms for each time
         # that are len(pitchangles)
         # In this case we have to replicate the L shells for each time
 
-        Lvals =[Ls]*len(times_form)
+        Lvals =[Ls] * len(times_form)
         Bvals = [Bm] * len(times_form)
-        shdata = pi.process_data(times_form, Lvals, Bvals, Enew)
+        shdata,res_code = pi.process_data(times_form, Lvals, Bvals, Enew)
 
-        outdata = OrderedDict()
-        outdata["time"] = times_form
-        for key in shdata:
-            outdata[key] = shdata[key]
+        if res_code ==200:
+            outdata = OrderedDict()
+            outdata["time"] = times_form
+            for key in shdata:
+                outdata[key] = shdata[key]
 
-        with open(os.path.join(outdir,fname), "w") as outfile:
-            json.dump(outdata, outfile)
+            with open(os.path.join(outdir,fname), "w") as outfile:
+                json.dump(outdata, outfile)
         sdate = sdate+dt.timedelta(days=1)
         edate = sdate + dt.timedelta(days=1)
 

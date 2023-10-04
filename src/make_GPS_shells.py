@@ -16,6 +16,7 @@ from scipy import stats
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import time
 app_path = os.path.join(os.path.dirname( __file__ ), '..','Docker')
 sys.path.insert(0, app_path)  # take precedence over any other in path
 from app import create_app
@@ -229,12 +230,12 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
     #------------------------ CREATE TRAJECTORY-----------------------------
     # Create the orbit for those times using TLEs from celestrak https://celestrak.org/
     # celestrak has been providing orbital info for many decades
-    # NOTE: The website will block ip addresses that access it to often
+    # NOTE: The website will block ip addresses that access it too often
     # First check if there is a local tle file. If there is none then
     # pull the tles and write to a file with a time tag. If it is more than
     # 1 day old then download new ones
 
-    # Get the GPS TLE info from celstrak for all the GPS sats
+    # Get the GPS TLE info from celestrak for all the GPS sats
     group = "GPS-OPS"
     format="TLE"
     celes_url = "https://celestrak.org/NORAD/elements/gp.php"
@@ -281,7 +282,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
     # of the GPS satellites. Its not clear why LANL uses an "ns" name
     # while NORAD uses PRN or how to associate those
     # 41019	ns73	2015-062A NAVSTAR 75 (USA 265), also known as GPS BIIF-11
-    #https://doi.org/10.1002/2017SW001604
+    # https://doi.org/10.1002/2017SW001604
 
     #--------------------------- GET SHELLS OUTPUT------------------------
     # Connect to SHELLS service to get the output along the sat for 90
@@ -305,7 +306,9 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
         # using requests
         app = create_app(test_config="test_config")
         shells_inputs = json.dumps(shells_io)
+
         response = app.test_client().post("/shells_io",data=shells_inputs,content_type='application/json')
+
     else:
         # Call the shells service which requires the magaphem service to be running as well
         sh_url = sh_url+'/shells_io'
@@ -313,7 +316,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
 
     #------------------------ WRITE OUTPUT FILE and PLOT ---------------------
     # To write the output file, first read in any data that is already processed and
-    # tadd any data returned in response from the shells service
+    # add any data returned in response from the shells service
 
     #This makes a dict of lists of the old data and returns none if there is no file
     odata = read_old_file(fname)
@@ -321,7 +324,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
     # If data is returned for the new data then add odata and ndata together
     # This is kind of messy because the output from the service is a list
     # of lists. But the output from the file is just a list
-    if (response.status_code>=200) & (response.status_code<=250):
+    if (response.status_code>=200) :
         # The serverless flask test gives a slightly different response than the actual app
         if testing==1:
             ndata1 = response.json
@@ -342,6 +345,9 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
         ndata1.pop('E flux')
         ndata1.pop('upper q')
         ndata1.pop('lower q')
+        # Also don't inlcude Energies and pitch angles
+        ndata1.pop('Energies')
+        ndata1.pop('pitch_angles')
 
         ndata = {key: list(np.array(ndata1.get(key, [])).flat)  for key in ndata1.keys()}
 
@@ -361,8 +367,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
     for key in shdata.keys():
         if key not in ['time','L']:
             for x in inds:
-                shdata[key][x]=-1
-
+                shdata[key][x]=-1e30
 
     # If theres data then write it to a file
     if shdata is not None:
@@ -418,7 +423,13 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
         bin_data = stats.binned_statistic_2d(np.array(shdata['L']).squeeze(), passes, data, statistic=np.nanmean, bins=[xbin, ybin])
         # make a plot with up to 4 energies
 
-        tbins= [dt.datetime.utcfromtimestamp(x) for x in np.nanmean(bin_data.statistic[0,:,:],axis=0)]
+        # this is the mean time for each pass
+        # At the start you can have a pass with no valid times between 4 and 6
+        tctimes = np.nanmean(bin_data.statistic[0,:,:],axis=0)
+        # Need to extrapolate time over nans
+        goodinds= np.where(~np.isnan(tctimes))[0]
+        #
+        tbins= [dt.datetime.utcfromtimestamp(x) for x in tctimes[goodinds]]
         plt.set_cmap('jet')
         pco = 1
         fco = 1
@@ -433,7 +444,7 @@ def make_GPS_shells(sdate_all, edate, sat, sh_url, realtime=1,tstep=5,ndays = 7,
                     fco = fco+1
                     pco=1
                 ax = plt.subplot(2,1,pco)
-                plt.pcolormesh(tbins,xbin[0:-1],bin_data.statistic[co,:,:],shading='auto')
+                plt.pcolormesh(tbins,xbin[0:-1],np.log10(bin_data.statistic[co,:,goodinds].T),shading='auto')
                 cbar=plt.colorbar()
                 cbar.set_label('log10(#/cm2-s-str-keV)', labelpad=10,rotation=270,fontsize=8)
                 plt.ylabel('L')
