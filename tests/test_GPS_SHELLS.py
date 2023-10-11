@@ -76,18 +76,18 @@ class test_GPS_shells(unittest.TestCase):
 
         self.assertEqual(1,success)
 
-    def test_B_check_new_output(self):
+    def test_A_timestamp(self):
         #===============================================================
-        # TEST 3: Check that a file with the last 2 days is created when none exists
+        # TEST 3: Check that a file is created with a timestamp from the last time
         #==============================================================
 
         # First delete any existing test output
         sat = "PRN 32"
         odir = os.getcwd() # Use the current working directory for the output
-        ndays = 2
+        ndays = 25
         tstep=5
         oname = 'GPS_SHELLS_test_'
-        fname = oname+str(ndays)+'day.txt'
+        fname = oname+str(ndays)+'day*.txt'
         ofile = glob.glob(os.path.join(odir,fname))
 
         # If a test file exists then delete it
@@ -100,7 +100,7 @@ class test_GPS_shells(unittest.TestCase):
 
         # This should create the file os.path.join(odir,fname)
         mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
-                        Es=[500, 2000], outdir=os.getcwd(),outname =oname, testing=1)
+                        Es=[200, 500, 800, 1000, 2000], outdir=os.getcwd(),outname =oname,tstamp=1, testing=1)
 
         ofile = glob.glob(os.path.join(odir, fname))
 
@@ -119,7 +119,50 @@ class test_GPS_shells(unittest.TestCase):
             success=0
         self.assertEqual(1, success)
 
-    def test_A_check_add_output(self):
+    def test_B_check_new_output(self):
+        #===============================================================
+        # TEST 3: Check that a file with the last 2 days is created when none exists
+        #==============================================================
+
+        # First delete any existing test output
+        sat = "PRN 32"
+        odir = os.getcwd() # Use the current working directory for the output
+        ndays = 25
+        tstep=5
+        oname = 'GPS_SHELLS_test_'
+        fname = oname+str(ndays)+'day.txt'
+        ofile = glob.glob(os.path.join(odir,fname))
+
+        # If a test file exists then delete it
+        if len(ofile)>0:
+            os.remove(ofile[0])
+
+        # This url doesn't get used because in testing mode it uses the serverless flask
+        # but it is needed as an input
+        sh_url = 'http://sehas:5005/shells_io/'
+
+        # This should create the file os.path.join(odir,fname)
+        mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
+                        Es=[200, 500, 800, 1000, 2000], outdir=os.getcwd(),outname =oname,tstamp=0, testing=1)
+
+        ofile = glob.glob(os.path.join(odir, fname))
+
+        if len(ofile)>0:
+            # If the file is there then check that it is the right len
+            # and has the right start time
+            scheck = dt.datetime.utcnow()
+            df = pd.read_csv(ofile[0])
+            odict = df.to_dict(orient='list')
+            last = dt.datetime.strptime(odict['time'][-1],'%Y-%m-%dT%H:%M:%S.%fZ')
+            tdiff=np.abs(((last - scheck).total_seconds()) / 60)
+            nvals = len(odict['time'])
+            if (tdiff<10) & (nvals>(ndays*24*60-60)/tstep):
+                success=1
+        else:
+            success=0
+        self.assertEqual(1, success)
+
+    def test_B_check_add_output(self):
         #===============================================================
         # TEST 4: Check that data is added to the output file
         #==============================================================
@@ -141,7 +184,7 @@ class test_GPS_shells(unittest.TestCase):
 
         # This should create the file s.path.join(odir,fname)
         mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
-                        Es=[500, 2000], outdir=odir,outname =oname, testing=1)
+                        Es=[500, 2000], outdir=odir,outname =oname,tstamp=0, testing=1)
 
         ofile = glob.glob(os.path.join(odir, fname))
         dformat = '%Y-%m-%dT%H:%M:%S.%fZ'
@@ -161,12 +204,12 @@ class test_GPS_shells(unittest.TestCase):
                 writer.writerow(skeys)
                 for ico in range(0, lind):
                     row1 = [odict['time'][ico], odict['L'][ico]]  # Time and L
-                    row2 = ["{0:.5f}".format(odict[k][ico]) for k in skeys[2::]]
+                    row2 = ["{0:.5g}".format(odict[k][ico]) for k in skeys[2::]]
                     row = row1 + row2
                     writer.writerow(row)
             # Then add to the file
             mgs.make_GPS_shells(None, None, sat, sh_url, realtime=1, tstep=tstep, ndays=ndays,
-                                Es=[500, 2000], outdir=os.getcwd(), outname=oname, testing=1)
+                                Es=[500, 2000], outdir=os.getcwd(), outname=oname,tstamp=0, testing=1)
 
             df = pd.read_csv(ofile[0])
             odict = df.to_dict(orient='list')
