@@ -11,8 +11,7 @@ TODO:
     update to python 3.7+ to get fromisoformat
         replace strptime call
         modify OpenAPI YAML file to note time format S(.mmmuuu) instead of S.mmm(uuu)
-    add magephem service for OPQ
-    add magephem service for IGRF, T89
+    add magephem service for T89 (when IRENE C++ code supports it)
 """
 
 import sys

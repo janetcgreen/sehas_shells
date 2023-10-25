@@ -5,18 +5,19 @@ recursive_equals - a recursive equality test that understands dicts, lists, nump
 
 import numpy as np
 import datetime as dt
+from pytest import approx
 
 def recursive_equals(a,b,path='/'):
     if isinstance(a,np.ndarray):
         assert isinstance(b,np.ndarray), '%s are not both numpy ndarrays ' % path
         assert len(a.dtype) == len(b.dtype), '%s have different dtype structure' % path
         if len(a.dtype) == 0: # simple array
-            assert np.array_equal(a,b,equal_nan=np.issubdtype(a.dtype,float)), 'arrays %s are not equal ' % path
+            assert np.all_close(a,b,equal_nan=np.issubdtype(a.dtype,float)), 'arrays %s are not equal ' % path
             return True
         else: # structured array
             assert a.dtype.names != b.dtype.names, 'structured arrays %s have different keys ' % path
             for key in a.dtype.names:
-                assert np.array_equal(a[key],b[key],equal_nan=np.issubdtype(a[key].dtype,float)),'arrays %s/%s are not equal' % (path,key)
+                assert np.all_close(a[key],b[key],equal_nan=np.issubdtype(a[key].dtype,float)),'arrays %s/%s are not equal' % (path,key)
             return True
             
     if isinstance(a,dict):
@@ -42,9 +43,14 @@ def recursive_equals(a,b,path='/'):
             assert np.issubdtype(type(b),base),'%s are not both %s' % (path,base.__name__)
             assert np.isscalar(a), 'a is not scalar %s' % path
             assert np.isscalar(b), 'b is not scalar %s' % path
-            if base == float:
-                assert (np.isnan(a) == np.isnan(b)), 'Only one is NaN at %s' % (path)
-            assert a==b, 'a != b at %s' % path
+            if base == float: # special case, handling nan and approximately equal
+                if np.isnan(a):
+                    assert np.isnan(b), 'a is nan, b is not at %s' % (path)
+                else:
+                    assert not np.isnan(b), 'b is nan, a is not at %s' % (path)
+                    assert a==approx(b), 'a != b at %s' % path
+            else: # all other classes require exact equals
+                assert a==b, 'a != b at %s' % path
             return True
 
     assert False, 'Unable to compare %s types %s and %s' % (path,type(a),type(b))
