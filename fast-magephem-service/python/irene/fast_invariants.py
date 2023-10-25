@@ -56,7 +56,7 @@ _slash = os.sep
 assert _slash == '/', "non-linux systems not supported yet"
 _flyin_path = os.path.dirname(os.path.abspath(__file__))
 _NN_files = { # file names by [kext][coord] w/o the final .mat, also w/o _Kp# for t89
-        'opq':{'Phi':'fastPhi_net','hmin':'fast_him_net'},
+        'opq':{'Phi':'fastPhi_net','hmin':'fast_hmin_net'},
         'igrf':{'Phi':'fastPhi_net_igrf','hmin':'fast_hmin_net_igrf'},
         }
 _NNs = {key:{} for key in _NN_files} # nets themselves

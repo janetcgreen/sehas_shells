@@ -30,6 +30,7 @@ paths:
         Supports GDZ, GEO, GSM, GSE, SM, GEI, MAG, SPH.<br>
         Provide input system (fromSys) and list of dates (dates), 
           list of 3-D locations (xIN), and requested output system (outSys).<br>
+        Supports up to 100,000 dates/locations <br>
         Returns same list of dates (dates) and list of 3-D locations (xOUT) in output system.<br>
         dates and xIN lists must have same length. xOUT will have that length as well.<br>
         - GDZ - geodetic as alt (km), latitude (deg), longitude (deg).
@@ -67,6 +68,8 @@ paths:
                 xIN:
                   allOf:
                     - $ref: '#/components/schemas/CoordinateList3D'
+                  minItems: 0
+                  maxItems: 100000
                   description: "list of input 3-D coordinate sets in fromSys (nested list)"
       responses:
         '200':
@@ -83,6 +86,8 @@ paths:
                   xOUT:
                     allOf:
                       - $ref: '#/components/schemas/CoordinateList3D'
+                    minItems: 0
+                    maxItems: 100000
                     description: "list of 3-D coordinate sets in toSys (nested list)"
         '405':
           description: Invalid input
@@ -90,7 +95,7 @@ paths:
     post:
       tags:
         - magephem
-      summary: Translate from one 3-D frame to another
+      summary: Compute magnetic ephemeris
       description: |
         compute magnetic ephemeris / coordinates for a list of times and locations<br>
         
@@ -112,6 +117,7 @@ paths:
             time x 3, or time x direciton x 3
           - kext - external field model 'opq' or 'igrf' (=none)
           - outputs - list of coordinates to output (I,Bm,K,Phi,hmin,L,Blocal,MLT,Bmin,BminX,BminY,BminZ)<br>
+        Supports up to 100,000 dates/locations, and up to 25 pitch angles/dirs <br>
         At most one of alpha, dirs is allowed. if neither alpha or dirs is provided, assumes alpha=90
         
         
@@ -147,6 +153,8 @@ paths:
                 X:
                   allOf:
                     - $ref: '#/components/schemas/CoordinateList3D'
+                  minItems: 0
+                  maxItems: 100000
                   description: "list of input 3-D coordinate sets (nested list)"
                 sys:
                   allOf:
@@ -164,21 +172,37 @@ paths:
                       description: scalar input pitch angle
                     - type: array
                       example: [10.0,45.0,90.0]
+                      minItems: 0
+                      maxItems: 25
+                      description: "static list of input pitch angles"
                       items:
-                        oneOf:
-                          - $ref: '#/components/schemas/PitchAngle'
-                          - type: array
-                            items:
-                              $ref: '#/components/schemas/PitchAngle'
-                      description: "list of input pitch angles"
+                        $ref: '#/components/schemas/PitchAngle'
+                    - type: array
+                      example: [[10.0,45.0,90.0],[20.0,55.0,95.0]]
+                      minItems: 0
+                      maxItems: 100000
+                      description: "time-varying list of lists input pitch angles"
+                      items:
+                          type: array
+                          minItems: 0
+                          maxItems: 25
+                          items:
+                            $ref: '#/components/schemas/PitchAngle'
                 dirs:
                   oneOf:
                     - allOf:
                         - $ref: '#/components/schemas/CoordinateList3D'
-                      description: "list of input 3-D coordinate sets (nested list)"
+                      minItems: 0
+                      maxItems: 25
+                      description: "list of static input 3-D coordinate sets (nested list)"
                     - type: array
+                      minItems: 0
+                      maxItems: 100000
                       items:
-                        $ref: '#/components/schemas/CoordinateList3D'
+                        allOf:
+                          - $ref: '#/components/schemas/CoordinateList3D'
+                        minItems: 0
+                        maxItems: 25
                       description: "list of lists of input 3-D coordinate sets (nested nested list)"
                 outputs:
                     type: array
@@ -286,6 +310,8 @@ components:
     DateList:
       # supply "description" via {allOf : [ $ref : #/components/schemas/DateList],description:...}
       type: array
+      minItems: 0
+      maxItems: 100000
       items:
         type: string
         format: date-time
@@ -296,10 +322,10 @@ components:
       example: [[ 100.0, 45.0, -73.0],[ 100.1, 45.2, -73.5]]
       items:
         type: array
+        minItems: 3
+        maxItems: 3
         items:
           format: number
-          minLength: 3
-          maxLength: 3
           example: 100.0
     PitchAngle:
       type: number
