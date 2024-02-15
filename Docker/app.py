@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_smorest import Api
 from dotenv import load_dotenv
+import os
 
 from shells_io import blp as IOBlueprint
 
@@ -12,9 +13,8 @@ def create_app(test_config=None):
     # and will have to be changed to the NASA CCMC address for production
 
     # There is also a .env file in the test directory that is slightly different
-    # Todo: figure out a better way to define paths to resources that does not
-    # require multiple .env files
-
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    load_dotenv(os.path.join(basedir, '.env'))
     load_dotenv(".env", verbose=True)
 
     # There is a default_config.py and test_config.py that define things
@@ -36,5 +36,6 @@ def create_app(test_config=None):
     # Register the blueprint that defines the shells inputs/outputs
     # and the /shells route imported from resources/io.py
     api.register_blueprint(IOBlueprint)
+
 
     return app

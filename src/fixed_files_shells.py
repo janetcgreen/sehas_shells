@@ -8,7 +8,6 @@ import requests
 import sys
 from collections import OrderedDict
 
-
 import numpy as np
 
 from dotenv import load_dotenv
@@ -17,6 +16,7 @@ app_path = os.path.join(os.path.dirname( __file__ ), '..','Docker')
 sys.path.insert(0, app_path)  # take precedence over any other in path
 import process_inputs as pi
 from app import create_app
+from flask import current_app
 
 def valid_date(s):
     '''
@@ -55,15 +55,29 @@ def purge(dir, pattern):
 
 def fixed_files_shells(sdate=None,edate=None,realtime=False,
                     Es=list(np.arange(200,3000,200)), Ls=list(np.arange(3,6.3,.5)), tstep=60,
-                       outdir = os.getcwd()):
+                       outdir = os.getcwd(),testing=False):
+    '''
+    PURPOSE: Returns the SHELLS electron fluxes at near equatorial Bmirror points
+    for a fixed set of Ls and energies at a user chosen time cadence
+    :param sdate (datetime): start date to process data
+    :param edate (datetime): end date to process data
+    :param realtime (0 or 1): flag for real time processing
+    :param Es (list): list of electron energies (keV) to process
+    :param Ls (list): list of L values to return the electron flux at
+    :param tstep (int): time cadence of the returned data (minutes)
+    :param outdir (str): location for the output files
+    :return:
+    '''
     # Set Bmirrors
-    Enew = [int(x) for x in Es]
-    Bm = [np.floor(2.591e+04 * (L ** 2.98)) for L in Ls]
+    Enew = [float(x) for x in Es] # turn the passed energies string into floats
 
-    #If its running in real time then start at the current day
-    # otherwise use the start and end times given
+    # Calculate the near equatorial Bmirror value for the input Ls
+    Bm = [np.floor(2.591e+04 * (L ** -2.98)) for L in Ls]
+
+    # If it's running in real time then always start at the current utc day
+    # otherwise use the start and end passed as inputs
     if realtime:
-        # Get the current date
+        # Get the current days start at hour 00:00:00
         sdate = dt.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         # Get the current time
         edate = dt.datetime.utcnow()
@@ -73,39 +87,49 @@ def fixed_files_shells(sdate=None,edate=None,realtime=False,
         edate=(sdate+dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         sdate=sdate.replace(minute=0, second=0, microsecond=0) # Force it to start on an hour
 
-    #edate = sdate+dt.timedelta(hours=24)
-    tform = '%Y-%m-%dT%H:%M:%S.%fZ'
+    tform = '%Y-%m-%dT%H:%M:%S.%fZ'# Time format to work with
+
     # Step through in day increments
+    print("Running data")
     while sdate<=last_edate:
-        # Create and format the times array between sdate and edate at timestep tstep
+        # Create and format the time array between sdate and edate at timestep tstep
+        times = make_times(sdate, edate, tstep) # Returns a list of datetimes
+        times_form = [time.strftime(tform) for time in times] # reformat time string for app
 
-        times = make_times(sdate, edate, tstep)
-        times_form = [time.strftime(tform) for time in times]
-        #print(times_form)
+        # Specify the json output file name
+        fname = f"shells_fixed_{times[-1].strftime('%Y%m%d')}.json"
 
-        # Specify the CSV file name
-        fname = f"shells_fixed_{times[-1].strftime('%Y%m%dT%H%M')}.json"
-
+        # This uses the code from the app but since we do not need the
+        # magephem service we don't actually have to call it from the service.
         # We need to use functionality that requires an application context
         # Set up an application context with app.app_context()
         # to avoid RuntimeError: working outside of application context
-        app = create_app(test_config="test_config")
+        # app = create_app(test_config="test_config")
+        print("Starting app")
+        if testing==True:
+            app = create_app(test_config="test_config")
+        else:
+            app = create_app()
+            print("Created app")
         app.app_context().push()
 
-        # In the normal shells usage we have a list of Ls and Bms for each time that are len(pitchangles)
+        #print("Push contect")
+        # In the normal shells usage we have a list of Ls and Bms for each time
+        # that are len(pitchangles)
         # In this case we have to replicate the L shells for each time
 
-        Lvals =[Ls]*len(times_form)
+        Lvals =[Ls] * len(times_form)
         Bvals = [Bm] * len(times_form)
-        shdata = pi.process_data(times_form, Lvals, Bvals, Enew)
+        shdata,res_code = pi.process_data(times_form, Lvals, Bvals, Enew)
 
-        outdata = OrderedDict()
-        outdata["time"] = times_form
-        for key in shdata:
-            outdata[key] = shdata[key]
+        if res_code ==200:
+            outdata = OrderedDict()
+            outdata["time"] = times_form
+            for key in shdata:
+                outdata[key] = shdata[key]
 
-        with open(os.path.join(outdir,fname), "w") as outfile:
-            json.dump(outdata, outfile)
+            with open(os.path.join(outdir,fname), "w") as outfile:
+                json.dump(outdata, outfile)
         sdate = sdate+dt.timedelta(days=1)
         edate = sdate + dt.timedelta(days=1)
 
@@ -113,20 +137,23 @@ def fixed_files_shells(sdate=None,edate=None,realtime=False,
 
 if __name__ == "__main__":
     '''
-    PURPOSE: This is a python script that can be run every hour with cron that will:
-    1) get the POES input data from the CCMC Hapi dbase from the last hour (use the sqlite dbase for now). 
-       Get the current day up to the current time.   
-    2) run the neural network directly (not calling the app) with process_inputs that calls run_nn() using 
+    PURPOSE: To create an updating dataset of daily files with SHELLS electron fluxes
+     at fixed L and Bmirror locations:
+     
+    It does the following tasks:
+    1) Gets the POES input data from the CCMC Hapi dbase. 
+       (the current day up to the current time.)   
+    2) Runs the SHELLS neural network directly by calling process_inputs (not the app)
+       that calls run_nn() using 
        Energies = np.arange(200,3000,200),
        Ls = np.arange(3,6.3,..5) and 
        Bmirrors = [np.floor(2.591e+04*(L**2.98)) for L in Ls] and 
-       times that are the same as the POES_input data from the dbase.
-    3) write the output to a daily file that updates in time shells_fixed_YYYYMMDDTHHMM.csv 
-       where the second one is the time it was written        
+       times depend on the input cadence.
+    3) Writes the output to a daily file that updates in time shells_fixed_YYYYMMDD.csv         
     '''
 
-    parser = argparse.ArgumentParser('This program runs every hour with cron '
-                                     'and writes the output to a daily file')
+    parser = argparse.ArgumentParser('This program outputs daily files of SHELLS electron fluxes'
+            'at fixed L and Bmirrors near the equator ')
     parser.add_argument('-s', "--startdate",
                         help="The Start Date - format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS ",
                         required=False,
@@ -156,6 +183,7 @@ if __name__ == "__main__":
     parser.add_argument('-od', "--outdir",
                         help="The local directory to put the output files",
                         required=False, default=os.getcwd())
+    parser.add_argument('-t', "--testing", action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -163,4 +191,4 @@ if __name__ == "__main__":
 
     x = fixed_files_shells(sdate=args.startdate,edate=args.enddate,realtime=args.realtime,
                            Es=args.energies, Ls=args.lshells, tstep=args.cadence,
-                           outdir=args.outdir)
+                           outdir=args.outdir,testing=args.testing)

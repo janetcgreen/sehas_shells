@@ -283,7 +283,7 @@ def GyroPeriod(Species,Energy,MagLat,L):
     q = mks[Species]['q'] # C
     (gamma,v,m) = MeVtogamma(Energy,Species)
 
-    B = dipoleB(L,MagLat)/1e9 # T
+    B = dipoleB(L,MagLat,0)/1e9 # T
 
     f = abs(q)*B/(2*np.pi*m) # no "c" in denominator in SI units
     Tg = 1./f

@@ -3,11 +3,13 @@ import glob
 import datetime as dt
 import numpy as np
 import logging
+from scipy import interpolate
 import sys
 import os
 import fnmatch
 import requests
 from joblib import load
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import keras
 import netCDF4 as nc4
 from io import BytesIO
@@ -289,14 +291,14 @@ def get_start_rt(outdir,cdict,sat):
             # This is annoying because sqlite and mysql use different parameter specification
             query = "SELECT max(time) from "+ cdict['tblname'] + " WHERE satId="+str(satId)
             #cursor.execute(query,(satId,))
-            # Todo check if this works with data in there
+
             cursor.execute(query)
             stime = cursor.fetchone()
 
             if stime[0] is None:
                 sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
             else:
-                #Todo check that this is giving the right time
+
                 sdate = dt.datetime.utcfromtimestamp(stime[0])
         else:
             sdate = None
@@ -405,6 +407,7 @@ def get_start_rt_text(cdict,sat,outdir):
     # If the sat is still running edate is None
     satend = satinfo.edate()
     if satend is None:
+        # If there is no enddate then it is still running
         satend = dt.datetime.utcnow()+dt.timedelta(days = 1)
 
     thisday = dt.datetime.utcnow().replace(hour=0,minute = 0, second = 0, microsecond=0)
@@ -419,7 +422,7 @@ def get_start_rt_text(cdict,sat,outdir):
         fout = os.path.join(outdir,'**',cdict['fname']+'*.'+cdict['input_type'])
         flist = glob.glob(fout,recursive=True)
         if len(flist)<1:
-            # If np files yet then start with today
+            # If no files yet then start with today at 00:00:00
             sdate = dt.datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)
         else:
             # Open the last file and look for any data for that sat
@@ -427,13 +430,14 @@ def get_start_rt_text(cdict,sat,outdir):
             ltime = None
             fco = 0
             if len(flist)>2:
+                # Just check the last two days not all the files
                 fend = 2
             else:
                 fend = len(flist)
             while ((fco<fend) & (ltime is None)):
                 lastdata = pd.read_csv(flist[fco]).to_dict(orient='list')
                 satIDs = np.array(lastdata['satID'])
-                inds = np.where(satIDs==satinfo.satid())[0]
+                inds = np.where(satIDs==sat)[0]
                 if len(inds)>0:
                     ltime = dt.datetime.strptime(lastdata['time'][inds[-1]],dformat)
                 fco = fco +1
@@ -783,7 +787,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                     #    sdate = find_s3_last_time(cdict, 'shells_*.nc')
                     if cdict['input_type']=='sqlite':
                         # Get the last processed data time from an sql dbase
-                        sdate = get_start_rt(cdict, sat)
+                        sdate = get_start_rt(outdir,cdict, sat)
                     elif cdict['input_type'] =='hapi':
                         # Get the last processed data time from a hap server
                         sdate = get_start_rt_hapi(cdict,sat) # Reads last processed from hapi
@@ -816,7 +820,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
             # and go to the next sat
             if sdate is not None:
                 while sdate <= edate:
-                    # Todo Check what happens in real time if I try and get data that is not there
+
                     logging.info(sdate.strftime("%Y%m%d")+' '+sat)
 
                     # Real time mode: Check if latest poes file has been updated before
@@ -832,26 +836,28 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                                     all=True ,site = noaasite)
 
                         # Get info on the first file
-                        #TODO: check that returned value is ok
                         check_file = requests.head(file_test[0], allow_redirects=True)
 
-                        # This is the last update to the file at NOAA
-                        fdate = dt.datetime.strptime(check_file.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S GMT')
+                        if check_file.status_code==200:
+                            # This is the last update to the files at NOAA
+                            fdate = dt.datetime.strptime(check_file.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S GMT')
 
-                        # If it has been updated then pull the data
-
-                        # Passes may go across the day file boundary so get data from the prior 90
-                        # minutes to ensure a complete first pass. (Data is usually dumped once (or twice) per orbit.
-                        # i.e., if sdate is 2000-01-02 00:00:00 the code gets data the day before as well
-                        # If sdate is 2000-01-02 01:30:00 then it will just get one day of data
-                        logging.info('file date '+fdate.strftime('%Y-%m-%d %H:%M:%S'))
-                        logging.info('sdate '+sdate.strftime('%Y-%m-%d %H:%M:%S'))
-                        # I add 80 minutes onto sdate because we expect data to be downloaded
-                        # every 90ish minutes.
-                        if fdate > sdate+dt.timedelta(minutes=80):
-                            data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
+                            # If it has been updated then pull the data
+                            # Passes may go across the day file boundary so get data from the prior 90
+                            # minutes to ensure a complete first pass. (Data is usually dumped once (or twice) per orbit.
+                            # i.e., if sdate is 2000-01-02 00:00:00 the code gets data the day before as well
+                            # If sdate is 2000-01-02 01:30:00 then it will just get one day of data
+                            logging.info('file date '+fdate.strftime('%Y-%m-%d %H:%M:%S'))
+                            logging.info('sdate '+sdate.strftime('%Y-%m-%d %H:%M:%S'))
+                            # I add 80 minutes onto sdate because we expect data to be downloaded
+                            # every 90ish minutes.
+                            if fdate > sdate+dt.timedelta(minutes=80):
+                                data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
                                             vars=vars, all=True, dtype='proc', site=noaasite)
+                            else:
+                                data = None
                         else:
+                            # If it can't even check the files then return no data
                             data = None
                     else:
                         # Reprocessing mode: just get the full day of data from the remote NOAA site
@@ -898,8 +904,19 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             # For 1 file on 2017 09/15 the first half of data is flags so there
                             # are no passinds< i_last and i_pass1 is [] empty.
                             if len(i_pass1)>0:
-                                # If there is a pass right before sdate then start there
-                                sind = passInds[i_pass1[-1]] # This is the index of the pass just before start
+                                # This bit is confusing and has to do with the fact that it is
+                                # sometimes hard to get the end of a pass through L shells
+                                # because the data is incomplete. So we do some reprocssing
+                                # of identical data to make sure its covered. Identical points
+                                # should be overwritten.
+                                # We try to go back two passes because the last pass is often not
+                                # caught if the data is cutoff in the minimum L shells and then
+                                # you get the next bit of data it suddenly turns up.
+                                # If there's a gap or something then use the last value
+                                if len(i_pass1)>2:
+                                    sind = passInds[i_pass1[-2]]
+                                else:
+                                    sind = passInds[i_pass1[-1]]# This is the index of the pass just before start
                             else:
                                 # If not then start with the first pass after sdate
                                 sind = passInds[0]
@@ -935,9 +952,10 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
 
                             # Get Kp from iswa dbase
                             iswaserver = 'https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/'
-                            if Kp_edate>dt.datetime.utcnow().replace(hour=0,minute=0,second=0):
+                            if Kp_edate>(dt.datetime.utcnow().replace(hour=0,minute=0,second=0)-dt.timedelta(days=2)):
                                 kpdataset = 'noaa_kp_p3h'
                             else:
+                                # This dataset is 2 days behind
                                 kpdataset = 'gfz_obs_geo_3hour_indices'
                             Kpdata,meta= get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset)
 
@@ -946,13 +964,18 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             # Change returned time to datetime and then to ctime
 
                             Kptimes = hapitime2datetime(Kpdata['Time'])
-                            # Todo make sure this returns the right ctime
-                            #Kpmsecs = [dt.datetime.timestamp(x)*1000 for x in Kptimes]
-                            Kpmsecs = [calendar.timegm(x.utctimetuple())*1000 for x in Kptimes]
-                            binned_data['Kp*10'] = 10*np.interp(binned_data['time_pass'][:], Kpmsecs, Kpdata['KP_3H'])
+                            Kpmsecs = [calendar.timegm(x.utctimetuple())*1000.0 for x in Kptimes]
+                            # JGREEN 9/2023 Changed this to use the previous value instead of interpolating
+                            f = interpolate.interp1d(Kpmsecs, Kpdata['KP_3H'], kind='previous',
+                                                     fill_value='extrapolate', bounds_error=False)
+                            # We change this to KpX10 because that is what is returned by omni
+                            # and all previous code was written to use omni kp*10 for the mapping
+                            # It gets changed back to Kp to find the right mapping bins in map_poes
+                            # but the neural network uses Kp*10
+                            binned_data['Kp*10'] = 10*f(binned_data['time_pass'][:])
+                            #binned_data['Kp*10'] = 10*np.interp(binned_data['time_pass'][:], Kpmsecs, Kpdata['KP_3H'])
 
-                            # Todo make a test for this
-                            # Todo Should this be Kp*10?
+                            # This returns Kp*10_max which is what is used by the neural network
                             binned_data['Kp_max'] = get_Kp_max(Kpdata['KP_3H'],Kpmsecs,3,binned_data['time_pass'])
 
                             # Add the satellite name to the dict;
@@ -985,7 +1008,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             map_data['L_IGRF'] = Lbins[0:-1]
                             map_data['dims'] = ['time','L_IGRF']
                             map_data['sat'] = sat
-                            map_data['Kp*10']=binned_data['Kp*10']
+                            map_data['Kp*10']= binned_data['Kp*10']
                             map_data['Kp_max'] = binned_data['Kp_max']
                             print('Done mapping data')
 
@@ -1012,6 +1035,18 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                                 # But the nn data output is a dict with seperate cols for each E and L
 
                                 outdat = map_data
+
+                            # Before writing data look for Nans or infs and
+                            # set them to -1
+                            mkeys = list(outdat.keys())
+                            mkeys.remove('time')
+                            mkeys.remove('dims')
+                            mkeys.remove('sat')
+                            eflux_flag = -99
+                            for key in mkeys:
+                                print(key)
+                                ninds = np.where((np.isnan(outdat[key][:]) |(np.isinf(outdat[key][:]))))
+                                outdat[key][ninds] = eflux_flag
 
                             # --------------- Write the data ------------------------
                             # Data may go to a dbase, files at S3 bucket or local files
@@ -1054,7 +1089,10 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             msg = 'No data for '+sat+' '+sdate.strftime("%Y-%m-%d")
                             logging.warning(msg)
                     # Process the next day of data
+
                     sdate = (sdate+dt.timedelta(days=1)).replace(hour = 0, minute=0, second=0, microsecond=0)
+
+
                     logging.info('Going to next day '+sdate.strftime("%Y%m%d"))
     except Exception as e:
         # If there are any exceptions then log the error

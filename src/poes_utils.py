@@ -910,10 +910,11 @@ def read_poes_bin(filename, datatype='raw', procvars=None):
         else:
             raw_cols = ['time', 'year', 'day', 'msec', 'satID', 'minor_frame', 'major_frame', 'sat_direction',
                     'alt', 'lat', 'lon'] + mep0_cols + mep90_cols + omni_cols + tspec0_cols + tspec30_cols + \
-                   ted0eflux_cols + ted30eflux_cols + ['microA_V', 'microB_V', 'DPU_V', 'MEPED_V', \
-                    'ted_V', 'ted_sweepV', 'ted_electron_CEM_V','ted_proton_CEM_V', 'mep_omni_biase_V', \
-                     'mep_circuit_temp', 'mep_proton_tel_temp', 'TED_temp','DPU_temp', 'HK_data', \
-                    'HK_key', 'ted_ele_PHD_level', 'ted_pro_PHD_level','ted_IFC_on', 'mep_IFC_on', 'ted_ele_HV_step','ted_pro_HV_step']
+                   ted0eflux_cols + ted30eflux_cols + ['microA_V', 'microB_V', 'DPU_V', 'MEPED_V',
+                    'ted_V', 'ted_sweepV', 'ted_electron_CEM_V','ted_proton_CEM_V', 'mep_omni_biase_V',
+                     'mep_circuit_temp', 'mep_proton_tel_temp', 'TED_temp','DPU_temp', 'HK_data',
+                    'HK_key', 'ted_ele_PHD_level', 'ted_pro_PHD_level','ted_IFC_on', 'mep_IFC_on',
+                    'ted_ele_HV_step','ted_pro_HV_step']
         return {k: np.array(data[k]) for k in raw_cols}
     else:
         # If processed data is requested then calibrations are needed to change counts to flux
@@ -1879,7 +1880,7 @@ def get_data_swpc_avg( dataloc, sat_name, dt_start, dt_end, clobber=False ):
             ''' ---------- List of Files to Ingest ------------------ '''
             # File name pattern we need to look for (data are organized as day files):
             dtype='avg'
-            fn_list = get_file_list(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_dir_root_list=[])
+            fn_list = get_file_list(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_root_list=[])
 
             #logger.debug( 'Found %d files to aggregate.' % len( fn_list ) )
             if len( fn_list ) == 0: return None
@@ -2094,7 +2095,9 @@ def getLpass(L,dist=200,prom=.5):
         Ldata = L.data
     else:
         Ldata = L
-    goodinds= np.where((Ldata[:]>0) & (Ldata[:]<30))[0]
+    #JGREEN 9/2023 Changed the threshold to 80 instead of 30
+    # because it defines the passes better
+    goodinds= np.where((Ldata[:]>0) & (Ldata[:]<80))[0]
     # This method works best for POES because at low L the values repeat so differencing
     # gives weird results
     peaks = find_peaks(Ldata[goodinds],distance=dist,prominence=prom) # Find the maxima
