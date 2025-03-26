@@ -454,7 +454,7 @@ def get_start_rt_text(cdict,sat,outdir):
         sdate = None
     return sdate
 
-def get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset):
+def get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset,kpparameters):
     '''
     PURPOSE: To get the Kp data from the ISWA HAPI server
     :param Kp_sdate (datetime):
@@ -470,7 +470,7 @@ def get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset):
     parameters = 'Time,KP_3H'
     opts = {'usecache': True, 'method': 'numpy'}
     try:
-        data, meta = hapi(iswaserver, kpdataset, parameters, start, stop, **opts)
+        data, meta = hapi(iswaserver, kpdataset, kpparameters, start, stop, **opts)
     except:
         data= None
         meta = None
@@ -588,7 +588,7 @@ def get_Kp_max(Kpdata,Kpmsecs,days,times):
 #===========================================================================
 
 def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, localdir=None, outdir=None, cdfdir= None,
-                noaasite=None,sats=None,
+                noaasite=None, remotedir=None, sats=None,
                 vars=['time','alt','lat','lon','L_IGRF','MLT',
                       'mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3','mep_ele_tel90_flux_e4'],
                 channels = ['mep_ele_tel90_flux_e1', 'mep_ele_tel90_flux_e2', 'mep_ele_tel90_flux_e3',
@@ -833,7 +833,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
 
                         # Check what files are at noaasite for sdate and sat
                         file_test = pu.get_file_list_remote(sat, sdate, sdate, dir_root_list=None, dtype = 'proc', swpc_root_list=None,
-                                    all=True ,site = noaasite)
+                                    all=True ,site = noaasite,rdir = remotedir)
 
                         # Get info on the first file
                         check_file = requests.head(file_test[0], allow_redirects=True)
@@ -853,7 +853,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             # every 90ish minutes.
                             if fdate > sdate+dt.timedelta(minutes=80):
                                 data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
-                                            vars=vars, all=True, dtype='proc', site=noaasite)
+                                            vars=vars, all=True, dtype='proc', site=noaasite,rdir = remotedir)
                             else:
                                 data = None
                         else:
@@ -862,7 +862,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                     else:
                         # Reprocessing mode: just get the full day of data from the remote NOAA site
                         data = pu.get_data_dict(sat, sdate - dt.timedelta(minutes=90), sdate, dataloc=localdir,
-                                                vars=vars, all=True, dtype='proc', site=noaasite)
+                                                vars=vars, all=True, dtype='proc', site=noaasite, rdir=remotedir)
                         logging.info('Got data ' + sdate.strftime("%Y%m%d") + ' ' + sat)
 
                     # If data was returned then process it. Otherwise do nothing but log missing data
@@ -885,7 +885,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                         Linds = np.where(data['L_IGRF'][:]<0)[0]
                         if len(Linds)>0:
                             Lfills = swu.get_Lvals(data, inds = Linds)
-                            data['L_IGRF'][Linds] = Lfills['Lm'][:]
+                            data['L_IGRF'][Linds] = np.squeeze(Lfills['Lm'][:])
                         logging.info('Done filling Ls ' + sdate.strftime("%Y%m%d") + ' ' + sat)
 
                         # Divide data into passes
@@ -951,13 +951,14 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             Kp_edate = pu.unix_time_ms_to_datetime(binned_data['time_pass'][-1])
 
                             # Get Kp from iswa dbase
-                            iswaserver = 'https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/'
+                            iswaserver = 'https://iswa.ccmc.gsfc.nasa.gov/IswaSystemWebApp/hapi/'
                             if Kp_edate>(dt.datetime.utcnow().replace(hour=0,minute=0,second=0)-dt.timedelta(days=2)):
                                 kpdataset = 'noaa_kp_p3h'
+                                kpparameters = 'Time,Kp_observed'
                             else:
                                 # This dataset is 2 days behind
                                 kpdataset = 'gfz_obs_geo_3hour_indices'
-                            Kpdata,meta= get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset)
+                            Kpdata,meta= get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset,kpparameters)
 
                             logging.info('Got Kp ' + sdate.strftime("%Y%m%d") + ' ' + sat)
                             # Interpolate to binned data times
@@ -966,7 +967,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             Kptimes = hapitime2datetime(Kpdata['Time'])
                             Kpmsecs = [calendar.timegm(x.utctimetuple())*1000.0 for x in Kptimes]
                             # JGREEN 9/2023 Changed this to use the previous value instead of interpolating
-                            f = interpolate.interp1d(Kpmsecs, Kpdata['KP_3H'], kind='previous',
+                            f = interpolate.interp1d(Kpmsecs, Kpdata['Kp_observed'], kind='previous',
                                                      fill_value='extrapolate', bounds_error=False)
                             # We change this to KpX10 because that is what is returned by omni
                             # and all previous code was written to use omni kp*10 for the mapping
@@ -976,7 +977,7 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                             #binned_data['Kp*10'] = 10*np.interp(binned_data['time_pass'][:], Kpmsecs, Kpdata['KP_3H'])
 
                             # This returns Kp*10_max which is what is used by the neural network
-                            binned_data['Kp_max'] = get_Kp_max(Kpdata['KP_3H'],Kpmsecs,3,binned_data['time_pass'])
+                            binned_data['Kp_max'] = get_Kp_max(Kpdata['Kp_observed'],Kpmsecs,3,binned_data['time_pass'])
 
                             # Add the satellite name to the dict;
                             binned_data['sat'] = [sat for x in range(0,len(binned_data['time_pass'][:]))]
@@ -1150,6 +1151,11 @@ if __name__ == "__main__":
             This is the noaa website with data. 
             Required in rt mode and currently should be www.ncei.noaa.gov
             
+    :param: -rd --remotedir (str, Not required)
+            This is the noaa website base directory. 
+            Required in rt mode and currently should be 
+            '/data/poes-metop-space-environment-monitor/access/'
+            
     :param: -sa --sats (multiple strings)
             List of satellite data to process, i.e. n15 n16 n17
             Default=['n15','n18','n19','m01','m02','m03']
@@ -1210,6 +1216,7 @@ if __name__ == "__main__":
     # 10/19/2020 JGREEN Added outdir so that output could be written to a file.
     # 09/2021 JGREEN Made significant changes so that data could be accessed at S3 bucket
     # 12/2022 JGREEN Made significant changes so that data could be accessed from sql database
+    # 10/2024 JGREEN Updated so that a remote directory can be passed as an arugment
 
     '''
     #  PARSE COMMAND LINE ARGUMENTS
@@ -1242,6 +1249,10 @@ if __name__ == "__main__":
     parser.add_argument('-ns', "--noaasite",
                         help="The remote noaa site to get the noaa files",
                         required=False)
+    parser.add_argument('-rd', "--remotedir",
+                        help="The remote directory to get the noaa files",
+                        required=False,
+                        default = '/data/poes-metop-space-environment-monitor/access/')
     parser.add_argument('-sa', "--sats",
                         help="The sat names to get",
                         required=False,
@@ -1289,6 +1300,6 @@ if __name__ == "__main__":
 
     x = process_SHELLS(sdate_all=args.startdate, edate=args.enddate, realtime=args.realtime,
                        neural=args.neural,localdir=args.localdir, outdir=args.outdir,
-                       cdfdir=args.cdfdir, noaasite=args.noaasite, sats=args.sats, vars=args.vars, channels=args.channels,
+                       cdfdir=args.cdfdir, noaasite=args.noaasite, remotedir=args.remotedir, sats=args.sats, vars=args.vars, channels=args.channels,
                        model=args.model[0], modeldir=args.modeldir[0], logfile=args.logfile,
                        configfile=args.config,csection = args.csection)
