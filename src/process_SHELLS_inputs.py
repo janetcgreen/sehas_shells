@@ -957,7 +957,9 @@ def process_SHELLS(sdate_all=None, edate=None, realtime=False, neural=False, loc
                                 kpparameters = 'Time,Kp_observed'
                             else:
                                 # This dataset is 2 days behind
-                                kpdataset = 'gfz_obs_geo_3hour_indices'
+                                #kpdataset = 'gfz_obs_geo_3hour_indices'
+                                kpdataset = 'GFZ_Indices_P3H'
+                                kpparameters = 'Time,Kp_observed'
                             Kpdata,meta= get_kp_data_iswa(Kp_sdate,Kp_edate,iswaserver,kpdataset,kpparameters)
 
                             logging.info('Got Kp ' + sdate.strftime("%Y%m%d") + ' ' + sat)
