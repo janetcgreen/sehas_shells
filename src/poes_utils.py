@@ -1209,7 +1209,7 @@ def get_file_list(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_root_li
     return (fn_list)
 
 def get_file_list_remote(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_root_list = None, all=False,
-                         site = 'ncei.noaa.gov'):
+                         site = 'ncei.noaa.gov',rdir='/data/poes-metop-space-environment-monitor/access/'):
     ''' 
     ----------------------------------------------------------------------------------------------
     PURPOSE: Used by get_data to create a list of file names to process if remote files are requested
@@ -1218,6 +1218,10 @@ def get_file_list_remote(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_
     :param dt_start (datetime): start date
     :param dt_end (datetime): end date
     :param dtype (str): 'raw','proc'
+    :param swpc_root_list (str): directory to look for swpc binary data
+    :param all: True or False
+    :param site: http site of the noaa poes data
+    :param remote_dir: base directory of the noaa poes data
     :return fn_list (list): list of file names to look for
     '''
 
@@ -1226,7 +1230,8 @@ def get_file_list_remote(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_
     # NOTE: This will have to change if the ngdc data structure changes
 
     #remote_dir = '/sem/poes/data/'
-    remote_dir = '/data/poes-metop-space-environment-monitor/access/'
+    #remote_dir = '/data/poes-metop-space-environment-monitor/access/'
+    remote_dir=rdir
     # Create a list of ngdc data files to look for in the specified directories or remotely
     n_days = ((dtm.timedelta(days=1) \
                + dtm.datetime(year=dt_end.year, month=dt_end.month, day=dt_end.day) \
@@ -1603,7 +1608,7 @@ def get_data( dataloc, sat_name, dt_start, dt_end, clobber=True, vars=None, all=
         #logger.error( traceback.format_exc() )
 
         return( None )
-def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=True, dtype=None, site=None, savedata=0 ):
+def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=True, dtype=None, site=None, rdir = None, savedata=0 ):
     """ Returns aggregated POES ngdc format "raw" or processed data between dt_start and dt_end
         This code returns a new aggregated dictionary instead of writing a netcdf file. It will
         also get the file remotely if site is given
@@ -1616,18 +1621,18 @@ def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=Tru
 
         Example:
         get_data_dict( 'm02', dt.datetime(2001,1,1), dt.datetime(2001,1,2), dataloc=['/datalocation'] ,
-        vars=None, all=True, dtype='raw', site=None, savedata=0 )
+        vars=None, all=True, dtype='raw', site=None, rdir=None, savedata=0 )
 
     2) Your poes data is mostly stored locally but you want it to check for data at NOAA if it is missing
         In this case, specify dataloc as before and also provide the website to search for the data.
 
         get_data_dict( 'm02', dt.datetime(2001,1,1), dt.datetime(2001,1,2), dataloc=['/datalocation'] ,
-        vars=None, all=True, dtype='raw', site='satdat.ngdc.noaa.gov', savedata=0 )
+        vars=None, all=True, dtype='raw', site='satdat.ngdc.noaa.gov', rdir=None, savedata=0 )
 
     3) Your poes data is not stored locally and you want it to get data.
 
         get_data_dict( 'm02', dt.datetime(2001,1,1), dt.datetime(2001,1,2), dataloc=None ,
-        vars=None, all=True, dtype='raw', site='satdat.ngdc.noaa.gov', savedata=0 )
+        vars=None, all=True, dtype='raw', site='satdat.ngdc.noaa.gov', rdir=None, savedata=0 )
 
 
     :param sat_name (string):               One of ['m01', 'm02', 'm03', 'n15', ..., 'n19' ].
@@ -1641,6 +1646,7 @@ def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=Tru
     :param all (Optional: True or False):    If True will include SWPC binary data
     :param dtype (string)                    Type of data requested ('raw' or 'processed')
     :param site (string)                    Website to get data from
+    :param rdir (strin)                     Base directory of the remote poes data
     :return data (dict):
 
     UPDATES:
@@ -1651,6 +1657,7 @@ def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=Tru
             And made it so that raw and processed used the same code
     08/2020: JGREEN: made this read the data to a dict
     01/2023: JGREEN Updated directory structure to match NOAAs new archive
+    10/2024: JGREEN: Update so the base directory is an input
     """
 
     my_name = 'get_data'
@@ -1714,7 +1721,7 @@ def get_data_dict( sat_name, dt_start, dt_end, dataloc=None , vars=None, all=Tru
         else:
             #  If there is a web site passed then check for files locally and remotely
             fn_list = get_file_list_remote(sat_name, dt_start, dt_end, dir_root_list, dtype, swpc_root_list=swpc_root_list,
-                                    all=all,site = site)
+                                    all=all,site = site, rdir=rdir)
 
         ## If no files are found return None
         if len( fn_list ) == 0: return None
