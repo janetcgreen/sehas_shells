@@ -5,9 +5,9 @@ core.*
 *~
 *.csv
 *.err
-*.so
 *.o
+python/irene/c/*.so
 python/irene/c/common_include
 python/irene/c/lib
 python/irene/c/models_include
-python/irene/lib
+.dockerconfigjson
